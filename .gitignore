@@ -1,2 +1,5 @@
-/uae/**
-/build/**
+.DS_Store
+**/bin
+.vscode/settings.json
+**/build/*
+**/uae/dh0/*
