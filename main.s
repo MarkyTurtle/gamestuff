@@ -171,9 +171,9 @@ level3_interrupt_handler
               lea     $dff000,a6
 
 
-              add.w   #$1,test_color
-              move.w  test_color,d0
-              move.w  d0,$dff180
+              ;add.w   #$1,test_color
+              ;move.w  test_color,d0
+              ;move.w  d0,$dff180
 
                 ; get joystick port 1
                 move.w  JOY0DAT(a6),d0
@@ -316,11 +316,23 @@ copper_colors   dc.w    COLOR00,$000
                 dc.w    COLOR29,$000
                 dc.w    COLOR30,$000
                 dc.w    COLOR31,$000
-                dc.w    $ffdf,$fffe                     ; wait for pal area
-                dc.w    $0001,$fffe
-                dc.w    COLOR00,$00f
-                dc.w    $2801,$fffe
-                dc.w    COLOR00,$0f00
+copper_wrap_wait
+                dc.w    $ffdf,$fffe                     ; wait required if wrapping inside the PAL screen area
+copper_wrap_bpl_wait
+                dc.w    $0001,$fffe                     ; for scanline and wrap bitplane ptrs
+copper_wrap_bpl dc.w    BPL1PTL,$0000                   ; scroll wrap bitplane ptrs (always the start of the bitplane)
+                dc.w    BPL1PTH,$0000
+                dc.w    BPL2PTL,$0000
+                dc.w    BPL2PTH,$0000
+                dc.w    BPL3PTL,$0000
+                dc.w    BPL3PTH,$0000
+                dc.w    BPL4PTL,$0000
+                dc.w    BPL4PTH,$0000
+                dc.w    BPL5PTL,$0000
+                dc.w    BPL5PTH,$0000
+
+                dc.w    COLOR00,$00f                ; debug colour line (shows where the buffer wrap is on screen)
+
                 dc.w    $ffff,$fffe
                 dc.w    $ffff,$fffe
 
@@ -381,11 +393,14 @@ bitplane
 
 init_copper_display
             lea     copper_bpl,a0
+            lea     copper_wrap_bpl,a1
             move.l  #bitplane,d0
               
             move.w  d0,2(a0)
+            move.w  d0,2(a1)                ; copper wrap bpl
             swap.w  d0
             move.w  d0,6(a0)
+            move.w  d0,6(a1)                ; copper wrap bpl
 
             lea     copper_colors,a0
             move.w  #$fff,6(a0)             ; colour 01
@@ -396,23 +411,80 @@ init_copper_display
             rts
 
 
-vertical_scroll_height  dc.w    256+32      ; max buffer height 
-vertical_scroll_value   dc.w    $0000
+vertical_buffer_height  dc.w    256+32      ; max buffer height 
+vertical_scroll_value   dc.w    0           ; the current scroll offset
+vertical_display_height dc.w    256         ; the viewable display height
+vertical_wait_value     dc.w    256+32
+
+calc_wrap_wait 
+            move.w      vertical_buffer_height,d0
+            sub.w       vertical_scroll_value,d0          ; bottom wait value (might be off screen if buffer higher than the screen)
+            ; clamp max wait to 255
+            cmp.w       #$0100,d0
+            ble         .no_clamp
+.clamp
+            move.w      #$0100,d0
+.no_clamp
+            ; add window vertical start
+            add.w       #$2c,d0
+            move.w      d0,d1
+
+            cmp.w       #$00100,d0         ; check for pal wait
+            blt         .no_pal_wait
+.is_pal_wait
+            move.w      #$00ff,d0
+            sub.w       #$0100,d1
+            bra         .set_cop_wait
+
+.no_pal_wait
+            sub.w       #$1,d0
+
+.set_cop_wait
+            lea         copper_wrap_wait,a0
+            move.b      d0,(a0) 
+            lea         copper_wrap_bpl_wait,a1
+            move.b      d1,(a1)
+
+            rts      
+            
+
+
+
+
+
+            rts
+
 
 vertical_scroll
             move.w      controller_port2,d0
             btst.l      #JOYSTICK_DOWN,d0
-            beq.s       .not_down
+            beq.s       .check_up
+.is_down
             move.w      vertical_scroll_value,d0
             add.w       #1,d0
-            cmp.w       vertical_scroll_height,d0
+            cmp.w       vertical_buffer_height,d0
             bcs         .not_wrap
             move.w      #0,d0
 .not_wrap
-            move.w  d0,vertical_scroll_value
+            move.w      d0,vertical_scroll_value
+            bra         .cont
 
-.not_down
+.check_up
+            btst.l      #JOYSTICK_UP,d0
+            beq.s       .cont
+.is_up 
+            move.w      vertical_scroll_value,d0
+            sub.w       #1,d0
+            cmp.w       #$0000,d0
+            bge         .not_up_wrap
+.is_up_wrap
+            move.w      vertical_buffer_height,d0
+.not_up_wrap
+            move.w      d0,vertical_scroll_value
             
+.cont
+
+
         ; update bitplane ptrs
             moveq       #0,d0
             moveq       #0,d1
@@ -426,6 +498,8 @@ vertical_scroll
             move.w  d0,2(a0)
             swap.w  d0
             move.w  d0,6(a0)
+
+            jsr     calc_wrap_wait
 
             rts
 
