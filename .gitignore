@@ -1,5 +1,7 @@
 .DS_Store
 **/bin
 .vscode/settings.json
-**/build/*
-**/uae/dh0/*
+**/build/main.o
+**/uae/dh0/main
+!/uae/dh0/
+!/build/
