@@ -170,6 +170,8 @@ level3_interrupt_handler
                 movem.l d0-d7/a0-a6,-(a7)
                 lea     $dff000,a6
 
+                move.w  #$0f0,COLOR00(a6)
+
                 add.w   #$1,frame_count
                 move.w  frame_count,d0
                 btst.l  #0,d0
@@ -179,13 +181,13 @@ level3_interrupt_handler
                 move.l  #copper_bpl_1,copper_bpl_ptr                        ;dc.l    copper_bpl_1
                 move.l  #copper_wrap_wait_1,copper_wrap_wait_ptr            ; dc.l    copper_wrap_wait_1
                 move.l  #copper_wrap_bpl_wait_1,copper_wrap_bpl_wait_ptr    ;dc.l    copper_wrap_bpl_wait_1
-                move.l  #copper_list_2,COP1LC(a6)
+                move.l  #copper_list_1,COP1LC(a6)
                 bra     .end_frame_stuff
 .even_frame
-                move.l  #copper_list_2,copper_ptr
-                move.l  #copper_bpl_2,copper_bpl_ptr                        ;dc.l    copper_bpl_1
-                move.l  #copper_wrap_wait_2,copper_wrap_wait_ptr            ; dc.l    copper_wrap_wait_1
-                move.l  #copper_wrap_bpl_wait_2,copper_wrap_bpl_wait_ptr    ;dc.l    copper_wrap_bpl_wait_1
+                move.l  #copper_list_1,copper_ptr
+                move.l  #copper_bpl_1,copper_bpl_ptr                        ;dc.l    copper_bpl_1
+                move.l  #copper_wrap_wait_1,copper_wrap_wait_ptr            ; dc.l    copper_wrap_wait_1
+                move.l  #copper_wrap_bpl_wait_1,copper_wrap_bpl_wait_ptr    ;dc.l    copper_wrap_bpl_wait_1
                 move.l  #copper_list_1,COP1LC(a6)
 .end_frame_stuff
 
@@ -207,6 +209,9 @@ level3_interrupt_handler
 
                 ; vertical scroll
                 jsr     vertical_scroll
+
+
+            move.w  #$000,COLOR00(a6)
 
                 ; clear the interrupt (level 3 only)
               move.w  INTREQR(a6),d0
@@ -341,6 +346,7 @@ copper_colors_1 dc.w    COLOR00,$000
                 dc.w    COLOR31,$000
 copper_wrap_wait_1
                 dc.w    $ffdf,$fffe                     ; wait required if wrapping inside the PAL screen area
+                dc.w    COLOR00,$00f
 copper_wrap_bpl_wait_1
                 dc.w    $0001,$fffe                     ; for scanline and wrap bitplane ptrs
 copper_wrap_bpl_1
@@ -355,7 +361,7 @@ copper_wrap_bpl_1
                 dc.w    BPL5PTL,$0000
                 dc.w    BPL5PTH,$0000
 
-                dc.w    COLOR00,$00f                ; debug colour line (shows where the buffer wrap is on screen)
+                dc.w    COLOR00,$000                ; debug colour line (shows where the buffer wrap is on screen)
 
                 dc.w    $ffff,$fffe
                 dc.w    $ffff,$fffe
@@ -418,6 +424,7 @@ copper_colors_2 dc.w    COLOR00,$000
                 dc.w    COLOR31,$000
 copper_wrap_wait_2
                 dc.w    $ffdf,$fffe                     ; wait required if wrapping inside the PAL screen area
+                dc.w    $180,$00f
 copper_wrap_bpl_wait_2
                 dc.w    $0001,$fffe                     ; for scanline and wrap bitplane ptrs
 copper_wrap_bpl_2
@@ -432,7 +439,7 @@ copper_wrap_bpl_2
                 dc.w    BPL5PTL,$0000
                 dc.w    BPL5PTH,$0000
 
-                dc.w    COLOR00,$00f                ; debug colour line (shows where the buffer wrap is on screen)
+                dc.w    COLOR00,$000                ; debug colour line (shows where the buffer wrap is on screen)
 
                 dc.w    $ffff,$fffe
                 dc.w    $ffff,$fffe
@@ -548,7 +555,7 @@ calc_wrap_wait
 ;            bra         .set_cop_wait
 
 .no_pal_wait
-            ;sub.w       #$1,d0
+            sub.w       #$1,d0
 
 .set_cop_wait
             move.l      copper_wrap_wait_ptr,a0
