@@ -114,8 +114,56 @@ supervisor
               ;move.w  #$8240,DMACON(a6)   ; enable blitter dma
 
 loop
+
               jmp     loop
 
+                    ; IN:
+                    ;   d0.w - x pixel pos to start
+                    ;   d1.w - y raster offset in bytes
+                    ;   d2.l - value to display
+                    ;   a0.l - text string to display (null terminated)
+debug_write
+                    movem.l d0-d7/a0-a6,-(a7)
+                    lea     debug_string,a0
+
+                    move.w  #8-1,d7             ; 8 nibbles
+.conv_loop          move.l  d2,d3
+                    and.l   #$0000000f,d3
+                    cmp.b   #$0a,d3
+                    bge     .hex
+.dig
+                    add.b   #$30,d3
+                    bra.s   .set_char_value
+.hex
+                    add.b   #55,d3
+
+.set_char_value
+                    move.b  d3,(a0,d7.w)
+                    ror.l   #4,d2
+                    dbf     d7,.conv_loop
+
+.clear
+                    lea   bitplane,a1
+                    move.w  #8-1,d7
+                    moveq   #0,d6
+.clearloop
+                    move.w  d7,d6
+                    mulu    #40,d6
+                    add.w   d1,d6
+                    move.b  #0,(a1,d6.w)
+                    move.b  #0,1(a1,d6.w)
+                    move.b  #0,2(a1,d6.w)
+                    move.b  #0,3(a1,d6.w)
+                    move.b  #0,4(a1,d6.w)
+                    move.b  #0,5(a1,d6.w)
+                    move.b  #0,6(a1,d6.w)
+                    move.b  #0,7(a1,d6.w)
+                    dbf     d7,.clearloop
+
+                    lea     bitplane,a1
+                    jsr     write_string
+                    movem.l (a7)+,d0-d7/a0-a6
+                    rts
 
                 ; default processor exception handler
 default_exception_handler
@@ -427,7 +475,10 @@ copper_wrap_wait_2
                 dc.w    $180,$00f
 copper_wrap_bpl_wait_2
                 dc.w    $0001,$fffe                     ; for scanline and wrap bitplane ptrs
+                dc.w    $180,$0f0
+
 copper_wrap_bpl_2
+                dc.w    $180,$f00
                 dc.w    BPL1PTL,$0000                   ; scroll wrap bitplane ptrs (always the start of the bitplane)
                 dc.w    BPL1PTH,$0000
                 dc.w    BPL2PTL,$0000
@@ -439,7 +490,8 @@ copper_wrap_bpl_2
                 dc.w    BPL5PTL,$0000
                 dc.w    BPL5PTH,$0000
 
-                dc.w    COLOR00,$000                ; debug colour line (shows where the buffer wrap is on screen)
+                dc.w    $8101,$fffe
+                dc.w    $180,$0f00
 
                 dc.w    $ffff,$fffe
                 dc.w    $ffff,$fffe
@@ -448,11 +500,12 @@ copper_wrap_bpl_2
               incdir  "libs/"
               include "joystick.s"
 
+              include "texttyper.s"
 
 bitplane      
                 ; 0-15 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$0f0f0f0f
+                dcb.l   (40*8)/4,$f0f0f0f0
                 ; 16-31 rasters
                 dcb.l   (40*8)/4,$ff00ff00
                 dcb.l   (40*8)/4,$00ff00ff
@@ -537,29 +590,22 @@ vertical_wait_value     dc.w    256+32
 calc_wrap_wait 
             move.w      vertical_buffer_height,d0
             sub.w       vertical_scroll_value,d0          ; bottom wait value (might be off screen if buffer higher than the screen)
-            ; clamp max wait to 255
-            cmp.w       #$00ff,d0
-            ble         .no_clamp
-.clamp
-            move.w      #$00ff,d0
-.no_clamp
+            sub.w       #1,d0
+
             ; add window vertical start
             add.w       #$2c,d0
             move.w      d0,d1
 
-;            cmp.w       #$00100,d0         ; check for pal wait
-;            blt         .no_pal_wait
-;.is_pal_wait
-;            move.w      #$00ff,d0
-;            sub.w       #$0101,d1
-;            bra         .set_cop_wait
-
-.no_pal_wait
-            sub.w       #$1,d0
 
 .set_cop_wait
             move.l      copper_wrap_wait_ptr,a0
-            move.b      d0,(a0) 
+            cmp.w       #$100,d0
+            blt         .no_pal
+.is_pal
+            move.b      #$ff,d0
+            add.w       #$1,d1
+
+.no_pal     move.b      d0,(a0) 
             move.l      copper_wrap_bpl_wait_ptr,a1
             move.b      d1,(a1)
 
@@ -581,7 +627,7 @@ vertical_scroll
             move.w      vertical_scroll_value,d0
             add.w       #1,d0
             cmp.w       vertical_buffer_height,d0
-            bcs         .not_wrap
+            blt         .not_wrap
             move.w      #0,d0
 .not_wrap
             move.w      d0,vertical_scroll_value
@@ -604,6 +650,18 @@ vertical_scroll
 
             jsr     calc_wrap_wait
 
+            ; IN:
+            ;   d0.w - x pixel pos to start
+            ;   d1.w - y raster offset in bytes
+            ;   d2.l - value to display
+            ;   a0.l - text string to display (null terminated)
+            moveq   #0,d0
+            move.l  #(40*200),d1
+            moveq   #0,d2
+            move.w  vertical_scroll_value,d2
+            lea     bitplane,a0
+            jsr     debug_write
+
         ; update bitplane ptrs
             moveq       #0,d0
             moveq       #0,d1
@@ -625,4 +683,12 @@ vertical_scroll
 
             rts
 
+debug_string  dc.b  "01234567",$0
+            even
+
+
+
+menu_font_gfx
+          incdir  "gfx/"
+          include "typerfont.s"
 
