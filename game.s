@@ -418,7 +418,7 @@ vertical_buffer_height  dc.w    256+32      ; max buffer height
 vertical_scroll_value   dc.w    16           ; the current scroll offset
 vertical_display_height dc.w    256         ; the viewable display height
 vertical_wait_value     dc.w    256+32
-
+vertical_scroll_speed   dc.w    4           ; number of pixels per scroll interval
    
 
 
@@ -496,10 +496,12 @@ joystick_scroll
             beq.s       .check_up
 .is_down
             move.w      vertical_scroll_value,d0
-            add.w       #1,d0
+            add.w       vertical_scroll_speed,d0
             cmp.w       vertical_buffer_height,d0
             ble         .not_wrap
-            move.w      #0,d0
+.is_down_wrap
+            sub.w       vertical_buffer_height,d0
+            ;move.w      #0,d0
 .not_wrap
             move.w      d0,vertical_scroll_value
             bra         .cont
@@ -509,11 +511,12 @@ joystick_scroll
             beq.s       .cont
 .is_up 
             move.w      vertical_scroll_value,d0
-            sub.w       #1,d0
+            sub.w       vertical_scroll_speed,d0
             cmp.w       #$0000,d0
             bge         .not_up_wrap
 .is_up_wrap
-            move.w      vertical_buffer_height,d0
+            add.w       vertical_buffer_height,d0
+            ;move.w      vertical_buffer_height,d0
 .not_up_wrap
             move.w      d0,vertical_scroll_value
             
