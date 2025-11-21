@@ -107,11 +107,9 @@ supervisor
             ; set up copper list
               lea     copper_list,a0
               move.l  a0,COP1LC(a6)
-              move.w  #$8280,DMACON(a6)
-
-
-              move.w  #$8300,DMACON(a6)   ; enable bitplane dma
-              move.w  #$8240,DMACON(a6)   ; enable blitter dma
+              move.w  #$8280,DMACON(a6)     ; enable copper dma
+              move.w  #$8300,DMACON(a6)     ; enable bitplane dma
+              move.w  #$8240,DMACON(a6)     ; enable blitter dma
 
 
             ; initialise game routines
@@ -484,7 +482,7 @@ init_copper_display
 
 
 vertical_buffer_height  dc.w    256+32      ; max buffer height 
-vertical_scroll_value   dc.w    16           ; the current scroll offset
+vertical_scroll_value   dc.w    0           ; the current scroll offset
 vertical_display_height dc.w    256         ; the viewable display height
 vertical_wait_value     dc.w    256+32
 vertical_scroll_speed   dc.w    1           ; number of pixels per scroll interval
@@ -990,7 +988,7 @@ scr_do_tile_row
                     ;   - d2.w = destination tile x-index (display buffer co-ords)
                     ;   - d3.w = destination tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
-scr_blit_tile
+scr_blit_tile   ;rts
                   ; get tile type value
                     mulu    SCR_TILEDATA_HEIGHT(a0),d1    ; get y index into scroll_tile_data
                     add.w   d1,d0                         ; get x,y index into scroll_tile_data 
@@ -1016,12 +1014,12 @@ scr_blit_tile
                     bne.s   .blit_wait
 
                     move.l  #$ffffffff,BLTAFWM(a6)    ; masks
-                    move.l  #$00F00000,BLTCON0(a6)    ; D=A, Transfer mode
+                    move.l  #$09F00000,BLTCON0(a6)    ; D=A, Transfer mode
                     move.l  a2,BLTAPT(a6)             ; src ptr
                     move.w  #0,BLTAMOD(a6)
                     move.l  a3,BLTDPT(a6)             ; dest ptr
                     move.w  #38,BLTDMOD(a6)
-                    move.w  #(16<<6)+1,(a6)           ; 16x16 blit - start     
+                    move.w  #(16<<6)+1,BLTSIZE(a6)           ; 16x16 blit - start     
                     rts
 
 
@@ -1082,7 +1080,7 @@ scroll_tile_data
 
                         even
 tile_gfx
-                        dcb.w   16,$0000
+                        dcb.w   16,$5555
                         dcb.w   16,$ffff
 
 
