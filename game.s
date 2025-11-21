@@ -113,6 +113,10 @@ supervisor
               move.w  #$8300,DMACON(a6)   ; enable bitplane dma
               ;move.w  #$8240,DMACON(a6)   ; enable blitter dma
 
+
+            ; initialise game routines
+              jsr   init_scroll
+
 loop
 
               jmp     loop
@@ -563,6 +567,54 @@ set_copper_scroll
             rts
 
 
+init_scroll
+            bsr     init_copper_wait_table
+            rts
+
+          ; ------------- initialise copper wait table -----------------
+init_copper_wait_table
+            lea     copper_wait_table,a0
+            move.w  vertical_buffer_height,d0
+            sub.w   #$100,d0
+            bcs     .set_pal_wrap
+          ; set copper offscreen are wrap values
+.set_offscreen_wrap
+            sub.w   #$1,d0
+            bcs     .set_pal_wrap
+.offscreen_loop
+            move.b  #$ff,(a0)+
+            move.b  #$2c,(a0)+
+            tst.w   d0                        ; set z=1 if d0.w == 0
+            dbeq    d0,.offscreen_loop        ; exit loop when d0.w == 0
+          ; set copper pal area wrap values
+.set_pal_wrap
+            move.w  #$2c,d0
+.pal_loop   move.b  #$ff,(a0)+
+            move.b  d0,(a0)+
+            tst.w   d0
+            dbeq    d0,.pal_loop
+
+          ; set copper $ff-$2c
+.set_ntsc_wrap
+            move.w  #$fe,d0
+.ntsc_loop  move.b  d0,(a0)+
+            move.b  d0,(a0)
+            add.b   #$01,(a0)+
+            cmp.b   #$2b,d0
+            dbeq    d0,.ntsc_loop
+
+            lea   copper_wait_table_end,a1
+            cmp.l a0,a1
+            bne.s copper_table_error
+            
+            rts
+
+copper_table_error
+            lea   $dff000,a6
+            move.w  VHPOSR(a6),COLOR00(a6)
+            jmp   copper_table_error
+
+
             ; ---------------------------------------------------------------
             ; Copper Wait Table
             ; Used as a precalculated set of copper waits for wrapping the 
@@ -892,6 +944,8 @@ copper_wait_table
                         dc.b    $2c,$2d     ; 255
                         
                         dc.b    $2b,$2c     ; 255
+copper_wait_table_end
+
 
 debug_string  dc.b  "01234567",$0
             even
