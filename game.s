@@ -111,7 +111,7 @@ supervisor
 
 
               move.w  #$8300,DMACON(a6)   ; enable bitplane dma
-              ;move.w  #$8240,DMACON(a6)   ; enable blitter dma
+              move.w  #$8240,DMACON(a6)   ; enable blitter dma
 
 
             ; initialise game routines
@@ -213,6 +213,8 @@ level2_interrupt_handler
               rte
 
 
+
+
 test_color      dc.w    $0
 frame_count     dc.w    $0
                 ; copper (intreq bit 04)
@@ -237,6 +239,20 @@ level3_interrupt_handler
 
                 ; vertical scroll
                 jsr     vertical_scroll
+
+
+                    ; IN:
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+                moveq   #0,d0
+                moveq   #1,d1
+                moveq   #0,d2
+                moveq   #0,d3
+                lea     scroll_data,a0
+                jsr     scr_blit_tile
 
 
                 ; clear the interrupt (level 3 only)
@@ -472,8 +488,8 @@ vertical_scroll_value   dc.w    16           ; the current scroll offset
 vertical_display_height dc.w    256         ; the viewable display height
 vertical_wait_value     dc.w    256+32
 vertical_scroll_speed   dc.w    1           ; number of pixels per scroll interval
-   
-
+vertical_scroll_buffer  dc.l    bitplane
+vertical_blit_pixel     dc.w    256+16      ; raster for next tile blit for vertical scroll
 
 calc_wrap_wait 
             move.w      vertical_scroll_value,d0
@@ -945,6 +961,129 @@ copper_wait_table
                         
                         dc.b    $2b,$2c     ; 255
 copper_wait_table_end
+
+
+
+
+
+                    ; ---------------- blit row of tile data to buffer --------------
+                    ; IN:
+                    ;   - d0.w = source tile y index 
+                    ;   - d1.w = source tile x index
+                    ;   - d2.w = destination vertical index (0-17)
+                    ;
+scr_do_tile_row     
+                    move.w  #20-1,d7                ; 20 tiles wide display
+.tile_loop
+                    bsr     scr_blit_tile
+                    add.w   #1,d1                   ; increment x index
+
+                    dbf     d7,.tile_loop
+
+                    rts
+
+
+
+                    ; IN:
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+scr_blit_tile
+                  ; get tile type value
+                    mulu    SCR_TILEDATA_HEIGHT(a0),d1    ; get y index into scroll_tile_data
+                    add.w   d1,d0                         ; get x,y index into scroll_tile_data 
+                    move.l  SCR_TILEDATA_PTR(a0),a2       ; get tile data address   
+                    move.b  (a2,d0.w),d5                  ; get tile type value
+
+                  ; calc source gfx ptr
+                    move.l  SCR_TILEGFX_PTR(a0),a2
+                    mulu    SCR_TILEGFX_SIZE(a0),d5                    
+                    lea     (a2,d5.w),a2              ; source tile gfx ptr
+
+                  ; calc destination gfx ptr
+                    move.l  SCR_BUFFER_PTR(a0),a3     ; destination bitplane ptr
+                    mulu    SCR_BUFFER_WIDTH(a0),d3   ; get y byte offset into bitplane
+                    mulu    #2,d2                     ; get x word offset
+                    add.w   d2,d3                     ; get x,y byte offset into bitplane
+                    lea     (a3,d3.w),a3              ; desination buffer ptr
+
+                  ; blit tile
+                    lea     CUSTOM,a6
+                    btst.b  #14-8,DMACONR(a6)
+.blit_wait          btst.b  #14-8,DMACONR(a6)
+                    bne.s   .blit_wait
+
+                    move.l  #$ffffffff,BLTAFWM(a6)    ; masks
+                    move.l  #$00F00000,BLTCON0(a6)    ; D=A, Transfer mode
+                    move.l  a2,BLTAPT(a6)             ; src ptr
+                    move.w  #0,BLTAMOD(a6)
+                    move.l  a3,BLTDPT(a6)             ; dest ptr
+                    move.w  #38,BLTDMOD(a6)
+                    move.w  #(16<<6)+1,(a6)           ; 16x16 blit - start     
+                    rts
+
+
+
+                    ; ---------------- scroll tile data ---------------
+                    ; scroll is currently 16x16 tiles
+                    ; horizontal view is 20 tiles (40 bytes = 320 pixels wide)
+                    ; visible vertical view is 16 tiles high (16 tiles = 256 pixels high)
+                    ; offscreen vertical view is 2 tiles high (2 tiles = 32 pixels high)
+                    ; one buffer of tile data = 20 x 18 tiles = 360 bytes
+                    ;
+                    rsreset
+SCR_TILEDATA_PTR      rs.l  1               ; ptr to tile map data
+SCR_TILEGFX_PTR       rs.l  1               ; ptr to tile gfx
+SCR_TILEGFX_SIZE      rs.w  1               ; Size of each tile in bytes
+SCR_TILEDATA_WIDTH    rs.w  1               ; tile map data - number of tiles wide
+SCR_TILEDATA_HEIGHT   rs.w  1               ; tile map data - number of tiles high
+SCR_VIEW_X            rs.w  1               ; Left co-ord of view window (pixel value)
+SCR_VIEW_Y            rs.w  1               ; Top co-ord of view window (pixel value)
+SCR_BUFFER_PTR        rs.l  1               ; Display buffer ptr
+SCR_BUFFER_WIDTH      rs.w  1               ; Display buffer width (bytes)
+SCR_BUFFER_HEIGHT     rs.w  1               ; Display buffer height (rasters)
+
+
+                      even
+scroll_data
+.tiledata_ptr         dc.l    scroll_tile_data
+.tilegfx_ptr          dc.l    tile_gfx
+.tilegfx_size         dc.w    32            ; each tile is 32 bytes
+.tiledata_width       dc.w    20            ; tiles wide
+.tiledata_height      dc.w    18            ; tiles high
+.view_x               dc.w    0             ; world pixel scroll pos (from top left)
+.view_y               dc.w    0             ; world pixel scroll pos (from top left)
+.buffer_ptr           dc.l    bitplane      ; display buffer address
+.buffer_width         dc.w    40            ; display buffer width (bytes)
+.buffer_height        dc.w    256+32        ; display buffer height (rasters)
+
+scroll_tile_data
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$01,$01,$01,$00,$01,$01,$01,$00,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$01,$00,$00,$01,$00,$01,$00,$01,$00,$01,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$01,$00,$00,$01,$00,$01,$00,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$01,$00,$00,$01,$00,$01,$00,$01,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$01,$00,$00,$01,$01,$01,$00,$01,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+                        dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+
+
+                        even
+tile_gfx
+                        dcb.w   16,$0000
+                        dcb.w   16,$ffff
 
 
 debug_string  dc.b  "01234567",$0
