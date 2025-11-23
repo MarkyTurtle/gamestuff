@@ -253,10 +253,6 @@ level3_interrupt_handler
 
 
 
-                ;jsr     scr_blit_tile_row
-                ;jsr     scr_blit_tile
-
-
                 ; clear the interrupt (level 3 only)
               move.w  INTREQR(a6),d0
               and.w   #%0000000001110000,d0
@@ -485,16 +481,75 @@ init_copper_display
             rts
 
 
-vertical_buffer_height  dc.w    256+32      ; max buffer height 
-vertical_scroll_value   dc.w    0           ; the current scroll offset
-vertical_display_height dc.w    256         ; the viewable display height
-vertical_wait_value     dc.w    256+32
-vertical_scroll_speed   dc.w    1           ; number of pixels per scroll interval
-vertical_scroll_buffer  dc.l    bitplane
-vertical_blit_pixel     dc.w    256+16      ; raster for next tile blit for vertical scroll
 
-calc_wrap_wait 
-            move.w      vertical_scroll_value,d0
+
+
+
+vertical_scroll
+            jsr     vertical_joystick_scroll                ; set vertical scroll speed by joystick input
+            jsr     vertical_soft_scroll                    ; update vertical soft scroll values
+            jsr     vertical_calc_wrap_wait                 ; set vertical scroll copper list buffer wrap values
+            jsr     vertical_set_copper_scroll              ; set copper list bitplane ptrs
+            rts
+
+
+        ; ----------- set vertical scroll speed from joystick input ------------
+vertical_joystick_scroll
+            lea         scroll_data,a0
+            move.w      controller_port2,d0
+
+        ; check joystick down
+.chk_joy_down
+            btst.l      #JOYSTICK_DOWN,d0
+            beq.s       .check_up
+.is_down
+            move.w      #$0001,SCR_VERT_SCROLL_SPEED(a0)
+            rts
+
+        ; check joystick up
+.check_up
+            btst.l      #JOYSTICK_UP,d0
+            beq.s       .not_up_or_down
+.is_up 
+            move.w      #$ffff,SCR_VERT_SCROLL_SPEED(a0)
+            rts
+
+.not_up_or_down
+            move.w      #$0000,SCR_VERT_SCROLL_SPEED(a0)
+            rts
+
+
+
+vertical_soft_scroll
+            lea         scroll_data,a0
+            move.w      SCR_VERT_SCROLL_PX(a0),d0
+            add.w       SCR_VERT_SCROLL_SPEED(a0),d0  
+
+        ; check scroll down wrap
+.chk_down_wrap
+            cmp.w       SCR_BUFFER_HEIGHT(a0),d0
+            blt         .chk_up_wrap
+.is_down_wrap
+            sub.w       SCR_BUFFER_HEIGHT(a0),d0
+            bra         .cont
+
+        ; check scroll up wrap
+.chk_up_wrap
+            cmp.w       #$0000,d0
+            bge         .cont
+.is_up_wrap
+            add.w       SCR_BUFFER_HEIGHT(a0),d0
+
+        ; store soft scroll value
+.cont
+            move.w      d0,SCR_VERT_SCROLL_PX(a0)
+            rts
+
+
+
+vertical_calc_wrap_wait 
+            lea         scroll_data,a0
+            move.w      SCR_VERT_SCROLL_PX(a0),d0
             asl.w       #1,d0
 
             lea         copper_wait_table,a0
@@ -513,66 +568,13 @@ calc_wrap_wait
 
 
 
-vertical_scroll
-            jsr     joystick_scroll  
-            jsr     calc_wrap_wait
-            jsr     set_copper_scroll
-            rts
-
-
-joystick_scroll
-            move.w      controller_port2,d0
-            btst.l      #JOYSTICK_DOWN,d0
-            beq.s       .check_up
-.is_down
-            move.w      vertical_scroll_value,d0
-            add.w       vertical_scroll_speed,d0
-            cmp.w       vertical_buffer_height,d0
-            blt         .not_wrap
-            move.w      #0,d0
-            ble         .not_wrap
-.is_down_wrap
-            sub.w       vertical_buffer_height,d0
-.not_wrap
-            move.w      d0,vertical_scroll_value
-            bra         .cont
-
-.check_up
-            btst.l      #JOYSTICK_UP,d0
-            beq.s       .cont
-.is_up 
-            move.w      vertical_scroll_value,d0
-            sub.w       vertical_scroll_speed,d0
-            cmp.w       #$0000,d0
-            bge         .not_up_wrap
-.is_up_wrap
-            add.w       vertical_buffer_height,d0
-.not_up_wrap
-            move.w      d0,vertical_scroll_value         
-.cont
-            rts
-
-
-
-
-            ; IN:
-            ;   d0.w - x pixel pos to start
-            ;   d1.w - y raster offset in bytes
-            ;   d2.l - value to display
-            ;   a0.l - text string to display (null terminated)
-            moveq   #0,d0
-            move.l  #(40*200),d1
-            moveq   #0,d2
-            move.w  vertical_scroll_value,d2
-            lea     bitplane,a0
-            jsr     debug_write
-
-set_copper_scroll
+vertical_set_copper_scroll
+            lea         scroll_data,a0
         ; update bitplane ptrs
             moveq       #0,d0
             moveq       #0,d1
             move.l      #bitplane,d0
-            move.w      vertical_scroll_value,d1
+            move.w      SCR_VERT_SCROLL_PX(a0),d1
             mulu        #40,d1
             add.l       d1,d0
 
@@ -585,6 +587,9 @@ set_copper_scroll
             rts
 
 
+
+
+
 init_scroll
             bsr     init_copper_wait_table
             rts
@@ -592,7 +597,8 @@ init_scroll
           ; ------------- initialise copper wait table -----------------
 init_copper_wait_table
             lea     copper_wait_table,a0
-            move.w  vertical_buffer_height,d0
+            lea     scroll_data,a1
+            move.w  SCR_BUFFER_HEIGHT(a1),d0
             sub.w   #$100,d0
             bcs     .set_pal_wrap
           ; set copper offscreen are wrap values
@@ -1082,6 +1088,10 @@ SCR_BUFFER_WIDTH            rs.w    1               ; Display buffer width (byte
 SCR_BUFFER_HEIGHT           rs.w    1               ; Display buffer height (rasters)
 SCR_DISPLAY_WIDTH_TILES     rs.w    1               ; Display Tiles Wide
 SCR_DISPLAY_HEIGHT_TILES    rs.w    1               ; Display Tiles High
+; soft scroll vales
+SCR_VERT_SCROLL_PX          rs.w    1               ; Vertical Scroll Pixel Value (buffer soft scroll)
+SCR_HORZ_SCROLL_PX          rs.w    1               ; Horizontal Scroll Pixel Value (buffer soft scroll)
+SCR_VERT_SCROLL_SPEED       rs.w    1               ; Vertical Scroll Speed +/-
 
                       even
 scroll_data
@@ -1099,6 +1109,9 @@ scroll_data
 .buffer_height          dc.w    256+32          ; display buffer height (rasters)
 .display_tiles_width    dc.w    20              ; the display is 20 tiles wide (visible scroll area)
 .display_tiles_high     dc.w    18              ; the display is 18 tiles high (visible scroll area)
+.vert_scroll_px         dc.w    0
+.horz_scroll_px         dc.w    0
+.vert_scroll_speed      dc.w    1               ; vertical scroll speed
 
 scroll_tile_data
                         dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
