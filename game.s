@@ -113,7 +113,20 @@ supervisor
 
 
             ; initialise game routines
-              jsr   init_scroll
+
+                    ; IN:
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+                moveq   #0,d0
+                moveq   #0,d1
+                moveq   #0,d2
+                moveq   #0,d3
+                lea     scroll_data,a0
+                jsr     scr_blit_tile_buffer
+                jsr     init_scroll
 
 loop
 
@@ -239,18 +252,9 @@ level3_interrupt_handler
                 jsr     vertical_scroll
 
 
-                    ; IN:
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
-                    ;   - a0.l = scroll data structure
-                moveq   #0,d0
-                moveq   #1,d1
-                moveq   #0,d2
-                moveq   #0,d3
-                lea     scroll_data,a0
-                jsr     scr_blit_tile
+
+                ;jsr     scr_blit_tile_row
+                ;jsr     scr_blit_tile
 
 
                 ; clear the interrupt (level 3 only)
@@ -963,21 +967,49 @@ copper_wait_table_end
 
 
 
+                    ; ---------------- blit buffer full of tile data to buffer --------------
+                    ; IN:
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+                    ;
+scr_blit_tile_buffer
+                    lea     scroll_data,a0
+                    moveq   #0,d0
+                    moveq   #0,d1
+                    moveq   #0,d2
+                    moveq   #0,d3
+
+                    move.w  SCR_DISPLAY_HEIGHT_TILES(a0),d4       ; display height in tiles
+                    subq    #1,d4
+.row_loop
+                    jsr     scr_blit_tile_row
+                    add.w   #1,d1
+                    add.w   #1,d3
+                    dbf     d4,.row_loop
+
+                    rts
 
                     ; ---------------- blit row of tile data to buffer --------------
                     ; IN:
-                    ;   - d0.w = source tile y index 
-                    ;   - d1.w = source tile x index
-                    ;   - d2.w = destination vertical index (0-17)
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
                     ;
-scr_do_tile_row     
-                    move.w  #20-1,d7                ; 20 tiles wide display
+scr_blit_tile_row   
+                    movem.l d0-d7/a0,-(sp) 
+                    move.w  #20-1,d7                    ; 20 tiles wide display
 .tile_loop
                     bsr     scr_blit_tile
-                    add.w   #1,d1                   ; increment x index
-
+                    add.w   #1,d0                   ; increment x index
+                    add.w   #1,d2
                     dbf     d7,.tile_loop
 
+                    movem.l (sp)+,d0-d7/a0
                     rts
 
 
@@ -988,24 +1020,27 @@ scr_do_tile_row
                     ;   - d2.w = destination tile x-index (display buffer co-ords)
                     ;   - d3.w = destination tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
-scr_blit_tile   ;rts
+scr_blit_tile   
+                    movem.l d0-d7/a0,-(sp)
                   ; get tile type value
-                    mulu    SCR_TILEDATA_HEIGHT(a0),d1    ; get y index into scroll_tile_data
-                    add.w   d1,d0                         ; get x,y index into scroll_tile_data 
-                    move.l  SCR_TILEDATA_PTR(a0),a2       ; get tile data address   
-                    move.b  (a2,d0.w),d5                  ; get tile type value
+                    mulu    SCR_TILEDATA_WIDTH(a0),d1       ; get y index into scroll_tile_data
+                    add.w   d1,d0                           ; get x,y index into scroll_tile_data 
+                    move.l  SCR_TILEDATA_PTR(a0),a2         ; get tile data address 
+                    moveq   #0,d5  
+                    move.b  (a2,d0.w),d5                    ; get tile type value
 
                   ; calc source gfx ptr
                     move.l  SCR_TILEGFX_PTR(a0),a2
                     mulu    SCR_TILEGFX_SIZE(a0),d5                    
-                    lea     (a2,d5.w),a2              ; source tile gfx ptr
+                    lea     (a2,d5.w),a2                ; source tile gfx ptr
 
                   ; calc destination gfx ptr
-                    move.l  SCR_BUFFER_PTR(a0),a3     ; destination bitplane ptr
-                    mulu    SCR_BUFFER_WIDTH(a0),d3   ; get y byte offset into bitplane
-                    mulu    #2,d2                     ; get x word offset
-                    add.w   d2,d3                     ; get x,y byte offset into bitplane
-                    lea     (a3,d3.w),a3              ; desination buffer ptr
+                    move.l  SCR_BUFFER_PTR(a0),a3           ; destination bitplane ptr
+                    mulu    SCR_TILEGFX_HEIGHT_PX(a0),d3    ; get raster y from tile y
+                    mulu    SCR_BUFFER_WIDTH(a0),d3         ; get y byte offset into bitplane
+                    mulu    #2,d2                           ; get x word offset
+                    add.w   d2,d3                           ; get x,y byte offset into bitplane
+                    lea     (a3,d3.w),a3                    ; desination buffer ptr
 
                   ; blit tile
                     lea     CUSTOM,a6
@@ -1019,7 +1054,8 @@ scr_blit_tile   ;rts
                     move.w  #0,BLTAMOD(a6)
                     move.l  a3,BLTDPT(a6)             ; dest ptr
                     move.w  #38,BLTDMOD(a6)
-                    move.w  #(16<<6)+1,BLTSIZE(a6)           ; 16x16 blit - start     
+                    move.w  #(16<<6)+1,BLTSIZE(a6)           ; 16x16 blit - start   
+                    movem.l (sp)+,d0-d7/a0  
                     rts
 
 
@@ -1032,30 +1068,37 @@ scr_blit_tile   ;rts
                     ; one buffer of tile data = 20 x 18 tiles = 360 bytes
                     ;
                     rsreset
-SCR_TILEDATA_PTR      rs.l  1               ; ptr to tile map data
-SCR_TILEGFX_PTR       rs.l  1               ; ptr to tile gfx
-SCR_TILEGFX_SIZE      rs.w  1               ; Size of each tile in bytes
-SCR_TILEDATA_WIDTH    rs.w  1               ; tile map data - number of tiles wide
-SCR_TILEDATA_HEIGHT   rs.w  1               ; tile map data - number of tiles high
-SCR_VIEW_X            rs.w  1               ; Left co-ord of view window (pixel value)
-SCR_VIEW_Y            rs.w  1               ; Top co-ord of view window (pixel value)
-SCR_BUFFER_PTR        rs.l  1               ; Display buffer ptr
-SCR_BUFFER_WIDTH      rs.w  1               ; Display buffer width (bytes)
-SCR_BUFFER_HEIGHT     rs.w  1               ; Display buffer height (rasters)
-
+SCR_TILEDATA_PTR            rs.l    1               ; ptr to tile map data
+SCR_TILEGFX_PTR             rs.l    1               ; ptr to tile gfx
+SCR_TILEGFX_SIZE            rs.w    1               ; Size of each tile in bytes
+SCR_TILEGFX_WIDTH_PX        rs.w    1               ; Width of each tile in pixels
+SCR_TILEGFX_HEIGHT_PX       rs.w    1               ; Height of each tile in pixels
+SCR_TILEDATA_WIDTH          rs.w    1               ; tile map data - number of tiles wide
+SCR_TILEDATA_HEIGHT         rs.w    1               ; tile map data - number of tiles high
+SCR_VIEW_X                  rs.w    1               ; Left co-ord of view window (pixel value)
+SCR_VIEW_Y                  rs.w    1               ; Top co-ord of view window (pixel value)
+SCR_BUFFER_PTR              rs.l    1               ; Display buffer ptr
+SCR_BUFFER_WIDTH            rs.w    1               ; Display buffer width (bytes)
+SCR_BUFFER_HEIGHT           rs.w    1               ; Display buffer height (rasters)
+SCR_DISPLAY_WIDTH_TILES     rs.w    1               ; Display Tiles Wide
+SCR_DISPLAY_HEIGHT_TILES    rs.w    1               ; Display Tiles High
 
                       even
 scroll_data
-.tiledata_ptr         dc.l    scroll_tile_data
-.tilegfx_ptr          dc.l    tile_gfx
-.tilegfx_size         dc.w    32            ; each tile is 32 bytes
-.tiledata_width       dc.w    20            ; tiles wide
-.tiledata_height      dc.w    18            ; tiles high
-.view_x               dc.w    0             ; world pixel scroll pos (from top left)
-.view_y               dc.w    0             ; world pixel scroll pos (from top left)
-.buffer_ptr           dc.l    bitplane      ; display buffer address
-.buffer_width         dc.w    40            ; display buffer width (bytes)
-.buffer_height        dc.w    256+32        ; display buffer height (rasters)
+.tiledata_ptr           dc.l    scroll_tile_data
+.tilegfx_ptr            dc.l    tile_gfx
+.tilegfx_size           dc.w    32              ; each tile is 32 bytes in size
+.tilegfx_width_px       dc.w    16              ; tile gfx = 16 pixels wide
+.tilegfx_height_px      dc.w    16              ; tile gfx = 16 pixles high
+.tiledata_width         dc.w    20              ; tiles wide
+.tiledata_height        dc.w    18              ; tiles high
+.view_x                 dc.w    0               ; world pixel scroll pos (from top left)
+.view_y                 dc.w    0               ; world pixel scroll pos (from top left)
+.buffer_ptr             dc.l    bitplane        ; display buffer address
+.buffer_width           dc.w    40              ; display buffer width (bytes)
+.buffer_height          dc.w    256+32          ; display buffer height (rasters)
+.display_tiles_width    dc.w    20              ; the display is 20 tiles wide (visible scroll area)
+.display_tiles_high     dc.w    18              ; the display is 18 tiles high (visible scroll area)
 
 scroll_tile_data
                         dc.b    $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
