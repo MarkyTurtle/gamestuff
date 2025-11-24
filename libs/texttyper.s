@@ -1,6 +1,54 @@
 
 
 
+                    ; IN:
+                    ;   d0.w - x pixel pos to start
+                    ;   d1.w - y raster offset in bytes
+                    ;   d2.l - value to display
+                    ;   a0.l - text string to display (null terminated)
+debug_write
+                    movem.l d0-d7/a0-a6,-(a7)
+                    lea     debug_string,a0
+
+                    move.w  #8-1,d7             ; 8 nibbles
+.conv_loop          move.l  d2,d3
+                    and.l   #$0000000f,d3
+                    cmp.b   #$0a,d3
+                    bge     .hex
+.dig
+                    add.b   #$30,d3
+                    bra.s   .set_char_value
+.hex
+                    add.b   #55,d3
+
+.set_char_value
+                    move.b  d3,(a0,d7.w)
+                    ror.l   #4,d2
+                    dbf     d7,.conv_loop
+
+.clear
+                    lea   bitplane,a1
+                    move.w  #8-1,d7
+                    moveq   #0,d6
+.clearloop
+                    move.w  d7,d6
+                    mulu    #40,d6
+                    add.w   d1,d6
+                    move.b  #0,(a1,d6.w)
+                    move.b  #0,1(a1,d6.w)
+                    move.b  #0,2(a1,d6.w)
+                    move.b  #0,3(a1,d6.w)
+                    move.b  #0,4(a1,d6.w)
+                    move.b  #0,5(a1,d6.w)
+                    move.b  #0,6(a1,d6.w)
+                    move.b  #0,7(a1,d6.w)
+                    dbf     d7,.clearloop
+
+                    lea     bitplane,a1
+                    jsr     write_string
+                    movem.l (a7)+,d0-d7/a0-a6
+                    rts
+
 
                     ; IN:
                     ;   d0.w - x pixel pos to start

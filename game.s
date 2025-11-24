@@ -37,23 +37,24 @@ stack         dcb.b   STACK_SIZE,0
 startup:
             ; todo: detect processor type, memory layout, chip versions 
             ; todo: wait for vertical blank before disabling sprite DMA
-            lea   STACK_PTR,a0
-            jsr   kill_system
+               lea.l     STACK_PTR,a0
+               lea.l     vector_handler_table,a1
+               jsr       kill_system
 
             ; enable joystick buttons
-              move.w  #$ff00,POTGO(a6)
+               move.w    #$ff00,POTGO(a6)
 
             ; intialise copper display
-              jsr     init_copper_display
+               jsr       init_copper_display
 
             ; set up copper list
-              lea     copper_list,a0
+               lea       copper_list,a0
 
-              lea     $dff000,a6
-              move.l  a0,COP1LC(a6)
-              move.w  #$8280,DMACON(a6)     ; enable copper dma
-              move.w  #$8300,DMACON(a6)     ; enable bitplane dma
-              move.w  #$8240,DMACON(a6)     ; enable blitter dma
+               lea       CUSTOM,a6
+               move.l    a0,COP1LC(a6)
+               move.w    #$8280,DMACON(a6)     ; enable copper dma
+               move.w    #$8300,DMACON(a6)     ; enable bitplane dma
+               move.w    #$8240,DMACON(a6)     ; enable blitter dma
 
 
             ; initialise game routines
@@ -64,150 +65,63 @@ startup:
                     ;   - d2.w = destination tile x-index (display buffer co-ords)
                     ;   - d3.w = destination tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
-                moveq   #0,d0
-                moveq   #0,d1
-                moveq   #0,d2
-                moveq   #0,d3
-                lea     scroll_data,a0
-                jsr     scr_blit_tile_buffer
-                jsr     init_scroll
+               moveq     #0,d0
+               moveq     #0,d1
+               moveq     #0,d2
+               moveq     #0,d3
+               lea       scroll_data,a0
+               jsr       scr_blit_tile_buffer
+               jsr       init_scroll
 
-            ; enable interrupts
-              move.w  #$C020,INTENA(a6)       ; enable vertb  
+          ; enable interrupts
+               move.w    #$C020,INTENA(a6)       ; enable vertb  
+
+
 loop
-
-              jmp     loop
+               jmp       loop
 
  
  
  
-                    ; IN:
-                    ;   d0.w - x pixel pos to start
-                    ;   d1.w - y raster offset in bytes
-                    ;   d2.l - value to display
-                    ;   a0.l - text string to display (null terminated)
-debug_write
-                    movem.l d0-d7/a0-a6,-(a7)
-                    lea     debug_string,a0
-
-                    move.w  #8-1,d7             ; 8 nibbles
-.conv_loop          move.l  d2,d3
-                    and.l   #$0000000f,d3
-                    cmp.b   #$0a,d3
-                    bge     .hex
-.dig
-                    add.b   #$30,d3
-                    bra.s   .set_char_value
-.hex
-                    add.b   #55,d3
-
-.set_char_value
-                    move.b  d3,(a0,d7.w)
-                    ror.l   #4,d2
-                    dbf     d7,.conv_loop
-
-.clear
-                    lea   bitplane,a1
-                    move.w  #8-1,d7
-                    moveq   #0,d6
-.clearloop
-                    move.w  d7,d6
-                    mulu    #40,d6
-                    add.w   d1,d6
-                    move.b  #0,(a1,d6.w)
-                    move.b  #0,1(a1,d6.w)
-                    move.b  #0,2(a1,d6.w)
-                    move.b  #0,3(a1,d6.w)
-                    move.b  #0,4(a1,d6.w)
-                    move.b  #0,5(a1,d6.w)
-                    move.b  #0,6(a1,d6.w)
-                    move.b  #0,7(a1,d6.w)
-                    dbf     d7,.clearloop
-
-                    lea     bitplane,a1
-                    jsr     write_string
-                    movem.l (a7)+,d0-d7/a0-a6
-                    rts
-
-                ; default processor exception handler
-default_exception_handler
-              move.w  #$0000,d0
-.loop         move.w  d0,$dff180
-              add.w   #$0001,d0
-              jmp     .loop
-
-
-                ; default trap instruction handler
-default_trap_handler
-              rte
-
-
-                ; serial transmit buffer empty (intreq bit 00)
-                ; disk block finished (intreq bit 01)
-                ; software interrupt (intreq bit 02)
-level1_interrupt_handler
-              movem.l d0-d7/a0-a6,-(a7)
-              lea     $dff000,a6
-
-                ; clear the interrupt (level 1 only)
-              move.w  INTREQ(a6),d0
-              and.w   #%0000000000000111,d0
-              move.w  d0,INTREQR(a6)
-
-              movem.l (a7)+,d0-d7/a0-a6
-              rte
-
-
-
-                ; io ports and timers (intreq bit 03) 
-level2_interrupt_handler
-              movem.l d0-d7/a0-a6,-(a7)
-              lea     $dff000,a6
-
-                ; clear the interrupt (level 1 only)
-              move.w  INTREQ(a6),d0
-              and.w   #%0000000000001000,d0
-              move.w  d0,INTREQR(a6)
-
-              movem.l (a7)+,d0-d7/a0-a6
-              rte
-
-
-
-
 test_color      dc.w    $0
 frame_count     dc.w    $0
+
                 ; copper (intreq bit 04)
                 ; vertical blank (intreq bit 05)
                 ; blitter (intreq bit 06)
 level3_interrupt_handler
-                movem.l d0-d7/a0-a6,-(a7)
-                lea     $dff000,a6
+               movem.l   d0-d7/a0-a6,-(a7)
+               lea       CUSTOM,a6
 
-                ; get joystick port 1
-                move.w  JOY0DAT(a6),d0
-                lea     controller_port1,a0
-                jsr     decode_joystick_directions
-                jsr     decode_joystick_port1_buttons
+          ; test for vbl interrupt
+               move.w    INTREQR(a6),d0
+               and.w     #$0020,d0
+               beq       .exit_handler
 
-                ; get joystick port 2
-                move.w  JOY1DAT(a6),d0
-                lea     controller_port2,a0
-                jsr     decode_joystick_directions
-                jsr     decode_joystick_port2_buttons
+          ; get joystick port 1
+               move.w    JOY0DAT(a6),d0
+               lea       controller_port1,a0
+               jsr       decode_joystick_directions
+               jsr       decode_joystick_port1_buttons
 
-                ; vertical scroll
-                jsr     vertical_scroll
+          ; get joystick port 2
+               move.w    JOY1DAT(a6),d0
+               lea       controller_port2,a0
+               jsr       decode_joystick_directions
+               jsr       decode_joystick_port2_buttons
+
+          ; vertical scroll
+               jsr       vertical_scroll
 
 
 
-                ; clear the interrupt (level 3 only)
-              move.w  INTREQR(a6),d0
-              and.w   #%0000000001110000,d0
-              move.w  d0,INTREQ(a6)
+          ; clear the interrupt (level 3 only)
+               move.w    INTREQR(a6),d0
+               and.w     #$0070,d0                     ; keep level 3 interrupt flags
+.exit_handler  move.w    d0,INTREQ(a6)                 ; clear level 3 interrupt flags
 
-              movem.l (a7)+,d0-d7/a0-a6
-              rte
+               movem.l   (a7)+,d0-d7/a0-a6
+               rte
 
 
                 ; audio 0-3 (intreq bits 07-10)
@@ -1164,129 +1078,149 @@ menu_font_gfx
 
 
 
-            ; IN:
-            ;   a0.l - new stack ptr address
-            ;   a1.l - vector table
-            ;
+          ; ----------------------------- Kill System ---------------------------
+          ; Kills the Amiga OS and initialised Vectors.
+          ; This needs work for processors other than 68000 which use the VBR
+          ; as a base address for Vectors etc.
+          ;
+          ; Could do with adding checks for Processor, Chipset, VBR, Memory etc.
+          ; 
+          ; IN:
+          ;   a0.l - new stack ptr address
+          ;   a1.l - vector table
+          ;
 kill_system
-                lea     $dff000,a6
-                move.w  #$7fff,INTENA(a6)
-                move.w  #$7fff,INTREQ(a6)
-                move.w  #$7fff,INTREQ(a6)
+               lea       CUSTOM,a6
+               move.w    #$7fff,INTENA(a6)        ; interrupts off
+               move.w    #$7fff,INTREQ(a6)        ; clear interrupt request flags
+               move.w    #$7fff,INTREQ(a6)        ; clear interrupt request flags
 
-.blit_wait      btst.b  #14-8,DMACONR(a6)
-                bne.s   .blit_wait
+.blit_wait     btst.b    #14-8,DMACONR(a6)        ; wait for any existing blit operation to finish
+               bne.s     .blit_wait
 
-                move.w  #$7fff,DMACON(a6)
-
-
-            ; enter supervisor mode (trash old stack)
-                move.l  (a7)+,a1              ; save return address
-                move.l  a0,a7                 ; set new user mode stack (for the moment)
-                lea     .supervisor(pc),a2
-                move.l  a2,$80.w
-                trap    #0
-.supervisor
-                move.l  a0,a7                 ; set supervisor stack
-                move.l  a1,-(a7)              ; set return address
+               move.w  #$7fff,DMACON(a6)
 
 
-            ; set default exception handlers $08.w - $60.w
-                lea     default_exception_handler,a0
-                lea     $08.w,a1
-                move.w  #22-1,d7                  ; 22 entries $08 - $5c
-.set_loop       move.l  a0,(a1)+
-                dbra    d7,.set_loop
+          ; enter supervisor mode (trash/forget old stack ptr)
+               move.l    (a7),a2                  ; save return address PC from existing stack
+               move.l    a0,a7                    ; set new user mode stack (for the moment)
+               move.l    #.supervisor,$80.w       ; set trap #0 vector
+               trap      #0                       ; execute trap to enter supervisor mode
 
-            ; set interrupt handlers
-              lea     level1_interrupt_handler,a0
-              move.l  a0,$64.w
-              lea     level2_interrupt_handler,a0
-              move.l  a0,$68.w
-              lea     level3_interrupt_handler,a0
-              move.l  a0,$6c.w
-              lea     level4_interrupt_handler,a0
-              move.l  a0,$70.w
-              lea     level5_interrupt_handler,a0
-              move.l  a0,$74.w
-              lea     level6_interrupt_handler,a0
-              move.l  a0,$78.w
-              lea     level7_interrupt_handler,a0
-              move.l  a0,$7c.w
+.supervisor    move.l    a0,a7                    ; set supervisor stack pointer SSP
+               move.l    a2,-(a7)                 ; store return address PC on stack
 
 
-            ; set trap vectors
-              lea     default_trap_handler,a0
-              move.l  a0,$80.w
-              move.l  a0,$84.w
-              move.l  a0,$88.w
-              move.l  a0,$8c.w
-              move.l  a0,$90.w
-              move.l  a0,$94.w
-              move.l  a0,$98.w
-              move.l  a0,$9c.w
-              move.l  a0,$a0.w
-              move.l  a0,$a4.w
-              move.l  a0,$a8.w
-              move.l  a0,$ac.w
-              move.l  a0,$b0.w
-              move.l  a0,$b4.w
-              move.l  a0,$b8.w
-              move.l  a0,$bc.w
-
-                rts
+          ; set exception vectors
+               lea       $0,a0                    
+.loop          move.l    (a1)+,d0
+               cmp.l     #$ffffffff,d0
+               beq.s     .cont
+               move.l    d0,(a0)+
+               bra.s     .loop
+.cont          
+               rts
 
 
 
-vector_table
-              dc.l    $0                              ; $00.w - Reset, Initial SSP
-              dc.l    $0                              ; $04.w - Reset, Initial PC
-              dc.l    default_exception_handler       ; $08.w
-              dc.l    default_exception_handler       ; $0C.w
-              dc.l    default_exception_handler       ; $10.w
-              dc.l    default_exception_handler       ; $14.w
-              dc.l    default_exception_handler       ; $18.w
-              dc.l    default_exception_handler       ; $1C.w
-              dc.l    default_exception_handler       ; $20.w
-              dc.l    default_exception_handler       ; $24.w
-              dc.l    default_exception_handler       ; $28.w
-              dc.l    default_exception_handler       ; $2C.w
-              dc.l    default_exception_handler       ; $30.w
-              dc.l    default_exception_handler       ; $34.w
-              dc.l    default_exception_handler       ; $38.w
-              dc.l    default_exception_handler       ; $3C.w
-              dc.l    default_exception_handler       ; $40.w
-              dc.l    default_exception_handler       ; $44.w
-              dc.l    default_exception_handler       ; $48.w
-              dc.l    default_exception_handler       ; $4C.w
-              dc.l    default_exception_handler       ; $50.w
-              dc.l    default_exception_handler       ; $54.w
-              dc.l    default_exception_handler       ; $58.w
-              dc.l    default_exception_handler       ; $5C.w
-              dc.l    default_exception_handler       ; $60.w
-              dc.l    level1_interrupt_handler        ; $64.w
-              dc.l    level2_interrupt_handler        ; $68.w
-              dc.l    level3_interrupt_handler        ; $6C.w
-              dc.l    level4_interrupt_handler        ; $70.w
-              dc.l    level5_interrupt_handler        ; $74.w
-              dc.l    level6_interrupt_handler        ; $78.w
-              dc.l    level7_interrupt_handler        ; $7C.w
-              dc.l    default_trap_handler            ; $80.w - Trap 00
-              dc.l    default_trap_handler            ; $84.w
-              dc.l    default_trap_handler            ; $88.w
-              dc.l    default_trap_handler            ; $8C.w
-              dc.l    default_trap_handler            ; $90.w
-              dc.l    default_trap_handler            ; $94.w
-              dc.l    default_trap_handler            ; $98.w
-              dc.l    default_trap_handler            ; $9C.w
-              dc.l    default_trap_handler            ; $A0.w
-              dc.l    default_trap_handler            ; $A4.w
-              dc.l    default_trap_handler            ; $A8.w
-              dc.l    default_trap_handler            ; $AC.w
-              dc.l    default_trap_handler            ; $B0.w
-              dc.l    default_trap_handler            ; $B4.w
-              dc.l    default_trap_handler            ; $B8.w
-              dc.l    default_trap_handler            ; $BC.w - Trap 15
+
+
+vector_handler_table                              ; Vector  | Addr      | Description
+              dc.l  $0                            ; 000     | $00.w     | Reset, Initial SSP
+              dc.l  $0                            ; 001     | $04.w     | Reset, Initial PC
+              dc.l  default_exception_handler     ; 002     | $08.w
+              dc.l  default_exception_handler     ; 003     | $0C.w
+              dc.l  default_exception_handler     ; 004     | $10.w
+              dc.l  default_exception_handler     ; 005     | $14.w
+              dc.l  default_exception_handler     ; 006     | $18.w
+              dc.l  default_exception_handler     ; 007     | $1C.w
+              dc.l  default_exception_handler     ; 008     | $20.w
+              dc.l  default_exception_handler     ; 009     | $24.w
+              dc.l  default_exception_handler     ; 010     | $28.w
+              dc.l  default_exception_handler     ; 011     | $2C.w
+              dc.l  default_exception_handler     ; 012     | $30.w
+              dc.l  default_exception_handler     ; 013     | $34.w
+              dc.l  default_exception_handler     ; 014     | $38.w
+              dc.l  default_exception_handler     ; 015     | $3C.w
+              dc.l  default_exception_handler     ; 016     | $40.w
+              dc.l  default_exception_handler     ; 017     | $44.w
+              dc.l  default_exception_handler     ; 018     | $48.w
+              dc.l  default_exception_handler     ; 019     | $4C.w
+              dc.l  default_exception_handler     ; 020     | $50.w
+              dc.l  default_exception_handler     ; 021     | $54.w
+              dc.l  default_exception_handler     ; 022     | $58.w
+              dc.l  default_exception_handler     ; 023     | $5C.w
+              dc.l  default_exception_handler     ; 024     | $60.w
+              dc.l  level1_interrupt_handler      ; 025     | $64.w
+              dc.l  level2_interrupt_handler      ; 026     | $68.w
+              dc.l  level3_interrupt_handler      ; 027     | $6C.w
+              dc.l  level4_interrupt_handler      ; 028     | $70.w
+              dc.l  level5_interrupt_handler      ; 029     | $74.w
+              dc.l  level6_interrupt_handler      ; 030     | $78.w
+              dc.l  level7_interrupt_handler      ; 031     | $7C.w
+              dc.l  default_trap_handler          ; 032     | $80.w - Trap 00
+              dc.l  default_trap_handler          ; 033     | $84.w
+              dc.l  default_trap_handler          ; 034     | $88.w
+              dc.l  default_trap_handler          ; 035     | $8C.w
+              dc.l  default_trap_handler          ; 036     | $90.w
+              dc.l  default_trap_handler          ; 037     | $94.w
+              dc.l  default_trap_handler          ; 038     | $98.w
+              dc.l  default_trap_handler          ; 039     | $9C.w
+              dc.l  default_trap_handler          ; 040     | $A0.w
+              dc.l  default_trap_handler          ; 041     | $A4.w
+              dc.l  default_trap_handler          ; 042     | $A8.w
+              dc.l  default_trap_handler          ; 043     | $AC.w
+              dc.l  default_trap_handler          ; 044     | $B0.w
+              dc.l  default_trap_handler          ; 045     | $B4.w
+              dc.l  default_trap_handler          ; 046     | $B8.w
+              dc.l  default_trap_handler          ; 047     | $BC.w - Trap 15
+              dc.l  $FFFFFFFF
+
                             
-              
+
+
+                ; default processor exception handler
+default_exception_handler
+              move.w  #$0000,d0
+.loop         move.w  d0,$dff180
+              add.w   #$0001,d0
+              jmp     .loop
+
+
+                ; default trap instruction handler
+default_trap_handler
+              rte
+
+
+                ; serial transmit buffer empty (intreq bit 00)
+                ; disk block finished (intreq bit 01)
+                ; software interrupt (intreq bit 02)
+level1_interrupt_handler
+              movem.l d0-d7/a0-a6,-(a7)
+              lea     $dff000,a6
+
+                ; clear the interrupt (level 1 only)
+              move.w  INTREQ(a6),d0
+              and.w   #%0000000000000111,d0
+              move.w  d0,INTREQR(a6)
+
+              movem.l (a7)+,d0-d7/a0-a6
+              rte
+
+
+
+                ; io ports and timers (intreq bit 03) 
+level2_interrupt_handler
+              movem.l d0-d7/a0-a6,-(a7)
+              lea     $dff000,a6
+
+                ; clear the interrupt (level 1 only)
+              move.w  INTREQ(a6),d0
+              and.w   #%0000000000001000,d0
+              move.w  d0,INTREQR(a6)
+
+              movem.l (a7)+,d0-d7/a0-a6
+              rte
+
+
 
