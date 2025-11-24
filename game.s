@@ -23,6 +23,7 @@ start
               jmp     startup
 
 
+
             ; ----------------------- stack memory ----------------------
             ; todo: put this in fast-memory if available
             ;
@@ -36,67 +37,8 @@ stack         dcb.b   STACK_SIZE,0
 startup:
             ; todo: detect processor type, memory layout, chip versions 
             ; todo: wait for vertical blank before disabling sprite DMA
-              lea     $dff000,a6
-              move.w  #$7fff,INTENA(a6)
-              move.w  #$7fff,DMACON(a6)
-              move.w  #$7fff,INTREQ(a6)
-              move.w  #$7fff,INTREQ(a6)
-
-            ; enter supervisor mode
-              lea     STACK_PTR,a7
-              lea     supervisor,a0
-              move.l  a0,$80.w
-              trap    #0
-supervisor
-            ; initialise the stack ptr
-              lea     STACK_PTR,a7
-
-            ; set default exception handlers $08.w - $60.w
-              lea     default_exception_handler,a0
-              lea     $08.w,a1
-              move.w  #22,d7                  ; 23 entries
-.set_loop      move.l  a0,(a1)+
-              dbra    d7,.set_loop
-
-
-            ; set interrupt handlers
-              lea     level1_interrupt_handler,a0
-              move.l  a0,$64.w
-              lea     level2_interrupt_handler,a0
-              move.l  a0,$68.w
-              lea     level3_interrupt_handler,a0
-              move.l  a0,$6c.w
-              lea     level4_interrupt_handler,a0
-              move.l  a0,$70.w
-              lea     level5_interrupt_handler,a0
-              move.l  a0,$74.w
-              lea     level6_interrupt_handler,a0
-              move.l  a0,$78.w
-              lea     level7_interrupt_handler,a0
-              move.l  a0,$7c.w
-
-
-            ; set trap vectors
-              lea     default_trap_handler,a0
-              move.l  a0,$80.w
-              move.l  a0,$84.w
-              move.l  a0,$88.w
-              move.l  a0,$8c.w
-              move.l  a0,$90.w
-              move.l  a0,$94.w
-              move.l  a0,$98.w
-              move.l  a0,$9c.w
-              move.l  a0,$a0.w
-              move.l  a0,$a4.w
-              move.l  a0,$a8.w
-              move.l  a0,$ac.w
-              move.l  a0,$b0.w
-              move.l  a0,$b4.w
-              move.l  a0,$b8.w
-              move.l  a0,$bc.w
-
-            ; enable interrupts
-              move.w  #$C020,INTENA(a6)       ; enable vertb  
+            lea   STACK_PTR,a0
+            jsr   kill_system
 
             ; enable joystick buttons
               move.w  #$ff00,POTGO(a6)
@@ -106,6 +48,8 @@ supervisor
 
             ; set up copper list
               lea     copper_list,a0
+
+              lea     $dff000,a6
               move.l  a0,COP1LC(a6)
               move.w  #$8280,DMACON(a6)     ; enable copper dma
               move.w  #$8300,DMACON(a6)     ; enable bitplane dma
@@ -128,10 +72,15 @@ supervisor
                 jsr     scr_blit_tile_buffer
                 jsr     init_scroll
 
+            ; enable interrupts
+              move.w  #$C020,INTENA(a6)       ; enable vertb  
 loop
 
               jmp     loop
 
+ 
+ 
+ 
                     ; IN:
                     ;   d0.w - x pixel pos to start
                     ;   d1.w - y raster offset in bytes
@@ -234,7 +183,6 @@ frame_count     dc.w    $0
 level3_interrupt_handler
                 movem.l d0-d7/a0-a6,-(a7)
                 lea     $dff000,a6
-
 
                 ; get joystick port 1
                 move.w  JOY0DAT(a6),d0
@@ -490,8 +438,55 @@ vertical_scroll
             jsr     vertical_soft_scroll                    ; update vertical soft scroll values
             jsr     vertical_calc_wrap_wait                 ; set vertical scroll copper list buffer wrap values
             jsr     vertical_set_copper_scroll              ; set copper list bitplane ptrs
+            jsr     vertical_blit_new_line                  ; check if new vertical data needs to be added to the screen buffer.
             rts
 
+
+        ; ----------- blit new gfx into display buffer -------------
+        ;   IN:
+        ;     a0.l = scroll_data
+vertical_blit_new_line
+          ; check if hard scroll line has changes
+            lea     scroll_data,a0
+            move.w  SCR_VIEW_Y(a0),d0
+            beq     .cont
+            divs.w  #16,d0
+.cont
+            ;move.w  SCR_VIEW_Y_IDX(a0),d1
+            cmp.w   SCR_VIEW_Y_IDX(a0),d0
+            bgt.s   .add_bottom_row             ; scroll up (new top row required)
+            blt.s   .add_top_row                ; scroll down (new bottom row required)
+            rts                                 ; no new data required
+
+.add_top_row
+            move.w  d0,SCR_VIEW_Y_IDX(a0)      ; store new tile index
+
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+            ;jsr     scr_blit_tile_row
+            move.w  #$0f0,$DFF180
+            rts
+
+.add_bottom_row
+            move.w  d0,SCR_VIEW_Y_IDX(a0)             ; store new tile index
+            add.w   SCR_DISPLAY_HEIGHT_TILES(a0),d0   ; get y index for bottom of the screen
+            move.w  d0,d1
+            move.w   SCR_VIEW_X_IDX(a0),d0
+            move.w   d0,d2
+            move.w  SCR_DISPLAY_HEIGHT_TILES(a0),d3
+            sub.w   #1,d3
+
+                    ;   - d0.w = source tile x index (scroll data co-ords)
+                    ;   - d1.w = source tile y index (scroll data co-ords)
+                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - a0.l = scroll data structure
+            ;jsr     scr_blit_tile_row
+            move.w  #$f00,$DFF180
+            rts
 
         ; ----------- set vertical scroll speed from joystick input ------------
 vertical_joystick_scroll
@@ -520,10 +515,13 @@ vertical_joystick_scroll
 
 
 
+        ; --------------- Do Vertical Soft Scroll based on Scroll Speed ------------
 vertical_soft_scroll
             lea         scroll_data,a0
             move.w      SCR_VERT_SCROLL_PX(a0),d0
-            add.w       SCR_VERT_SCROLL_SPEED(a0),d0  
+            move.w      SCR_VERT_SCROLL_SPEED(a0),d7
+            add.w       d7,d0                           ; update buffer y scroll
+            add.w       d7,SCR_VIEW_Y(a0)               ; update world view y scroll
 
         ; check scroll down wrap
 .chk_down_wrap
@@ -547,6 +545,7 @@ vertical_soft_scroll
 
 
 
+        ; ----------------- Set scroll buffer wrap vertical copper wait ------------------
 vertical_calc_wrap_wait 
             lea         scroll_data,a0
             move.w      SCR_VERT_SCROLL_PX(a0),d0
@@ -567,7 +566,7 @@ vertical_calc_wrap_wait
 
 
 
-
+        ; ------------------ Set scroll buffer top bitplane ptrs in copper ----------------
 vertical_set_copper_scroll
             lea         scroll_data,a0
         ; update bitplane ptrs
@@ -982,12 +981,22 @@ copper_wait_table_end
                     ;   - a0.l = scroll data structure
                     ;
 scr_blit_tile_buffer
+
                     lea     scroll_data,a0
                     moveq   #0,d0
-                    moveq   #0,d1
                     moveq   #0,d2
                     moveq   #0,d3
 
+                  ; calc source tile Y co-oord (top line's initial tile index)
+.calc_top_row_idx
+                    moveq   #0,d1
+                    move.w  SCR_VIEW_Y(a0),d1                        ; Get the View Windows's Y scroll co-oord
+                    beq     .store_top_row_idx
+                    divs.w  #16,d1
+.store_top_row_idx
+                    move.w  d1,SCR_VIEW_Y_IDX(a0)                 ; store initial tile y index
+
+.get_row_count
                     move.w  SCR_DISPLAY_HEIGHT_TILES(a0),d4       ; display height in tiles
                     subq    #1,d4
 .row_loop
@@ -1082,7 +1091,9 @@ SCR_TILEGFX_HEIGHT_PX       rs.w    1               ; Height of each tile in pix
 SCR_TILEDATA_WIDTH          rs.w    1               ; tile map data - number of tiles wide
 SCR_TILEDATA_HEIGHT         rs.w    1               ; tile map data - number of tiles high
 SCR_VIEW_X                  rs.w    1               ; Left co-ord of view window (pixel value)
+SCR_VIEW_X_IDX              rs.w    1               ; Left co-ord of view window (tile x index)
 SCR_VIEW_Y                  rs.w    1               ; Top co-ord of view window (pixel value)
+SCR_VIEW_Y_IDX              rs.w    1               ; Top co-ord of view window (tile y index)
 SCR_BUFFER_PTR              rs.l    1               ; Display buffer ptr
 SCR_BUFFER_WIDTH            rs.w    1               ; Display buffer width (bytes)
 SCR_BUFFER_HEIGHT           rs.w    1               ; Display buffer height (rasters)
@@ -1103,7 +1114,9 @@ scroll_data
 .tiledata_width         dc.w    20              ; tiles wide
 .tiledata_height        dc.w    18              ; tiles high
 .view_x                 dc.w    0               ; world pixel scroll pos (from top left)
+.view_x_idx             dc.w    0               ; tile map x index
 .view_y                 dc.w    0               ; world pixel scroll pos (from top left)
+.view_y_idx             dc.w    0               ; tile map y index
 .buffer_ptr             dc.l    bitplane        ; display buffer address
 .buffer_width           dc.w    40              ; display buffer width (bytes)
 .buffer_height          dc.w    256+32          ; display buffer height (rasters)
@@ -1148,4 +1161,132 @@ debug_string  dc.b  "01234567",$0
 menu_font_gfx
           incdir  "gfx/"
           include "typerfont.s"
+
+
+
+            ; IN:
+            ;   a0.l - new stack ptr address
+            ;   a1.l - vector table
+            ;
+kill_system
+                lea     $dff000,a6
+                move.w  #$7fff,INTENA(a6)
+                move.w  #$7fff,INTREQ(a6)
+                move.w  #$7fff,INTREQ(a6)
+
+.blit_wait      btst.b  #14-8,DMACONR(a6)
+                bne.s   .blit_wait
+
+                move.w  #$7fff,DMACON(a6)
+
+
+            ; enter supervisor mode (trash old stack)
+                move.l  (a7)+,a1              ; save return address
+                move.l  a0,a7                 ; set new user mode stack (for the moment)
+                lea     .supervisor(pc),a2
+                move.l  a2,$80.w
+                trap    #0
+.supervisor
+                move.l  a0,a7                 ; set supervisor stack
+                move.l  a1,-(a7)              ; set return address
+
+
+            ; set default exception handlers $08.w - $60.w
+                lea     default_exception_handler,a0
+                lea     $08.w,a1
+                move.w  #22-1,d7                  ; 22 entries $08 - $5c
+.set_loop       move.l  a0,(a1)+
+                dbra    d7,.set_loop
+
+            ; set interrupt handlers
+              lea     level1_interrupt_handler,a0
+              move.l  a0,$64.w
+              lea     level2_interrupt_handler,a0
+              move.l  a0,$68.w
+              lea     level3_interrupt_handler,a0
+              move.l  a0,$6c.w
+              lea     level4_interrupt_handler,a0
+              move.l  a0,$70.w
+              lea     level5_interrupt_handler,a0
+              move.l  a0,$74.w
+              lea     level6_interrupt_handler,a0
+              move.l  a0,$78.w
+              lea     level7_interrupt_handler,a0
+              move.l  a0,$7c.w
+
+
+            ; set trap vectors
+              lea     default_trap_handler,a0
+              move.l  a0,$80.w
+              move.l  a0,$84.w
+              move.l  a0,$88.w
+              move.l  a0,$8c.w
+              move.l  a0,$90.w
+              move.l  a0,$94.w
+              move.l  a0,$98.w
+              move.l  a0,$9c.w
+              move.l  a0,$a0.w
+              move.l  a0,$a4.w
+              move.l  a0,$a8.w
+              move.l  a0,$ac.w
+              move.l  a0,$b0.w
+              move.l  a0,$b4.w
+              move.l  a0,$b8.w
+              move.l  a0,$bc.w
+
+                rts
+
+
+
+vector_table
+              dc.l    $0                              ; $00.w - Reset, Initial SSP
+              dc.l    $0                              ; $04.w - Reset, Initial PC
+              dc.l    default_exception_handler       ; $08.w
+              dc.l    default_exception_handler       ; $0C.w
+              dc.l    default_exception_handler       ; $10.w
+              dc.l    default_exception_handler       ; $14.w
+              dc.l    default_exception_handler       ; $18.w
+              dc.l    default_exception_handler       ; $1C.w
+              dc.l    default_exception_handler       ; $20.w
+              dc.l    default_exception_handler       ; $24.w
+              dc.l    default_exception_handler       ; $28.w
+              dc.l    default_exception_handler       ; $2C.w
+              dc.l    default_exception_handler       ; $30.w
+              dc.l    default_exception_handler       ; $34.w
+              dc.l    default_exception_handler       ; $38.w
+              dc.l    default_exception_handler       ; $3C.w
+              dc.l    default_exception_handler       ; $40.w
+              dc.l    default_exception_handler       ; $44.w
+              dc.l    default_exception_handler       ; $48.w
+              dc.l    default_exception_handler       ; $4C.w
+              dc.l    default_exception_handler       ; $50.w
+              dc.l    default_exception_handler       ; $54.w
+              dc.l    default_exception_handler       ; $58.w
+              dc.l    default_exception_handler       ; $5C.w
+              dc.l    default_exception_handler       ; $60.w
+              dc.l    level1_interrupt_handler        ; $64.w
+              dc.l    level2_interrupt_handler        ; $68.w
+              dc.l    level3_interrupt_handler        ; $6C.w
+              dc.l    level4_interrupt_handler        ; $70.w
+              dc.l    level5_interrupt_handler        ; $74.w
+              dc.l    level6_interrupt_handler        ; $78.w
+              dc.l    level7_interrupt_handler        ; $7C.w
+              dc.l    default_trap_handler            ; $80.w - Trap 00
+              dc.l    default_trap_handler            ; $84.w
+              dc.l    default_trap_handler            ; $88.w
+              dc.l    default_trap_handler            ; $8C.w
+              dc.l    default_trap_handler            ; $90.w
+              dc.l    default_trap_handler            ; $94.w
+              dc.l    default_trap_handler            ; $98.w
+              dc.l    default_trap_handler            ; $9C.w
+              dc.l    default_trap_handler            ; $A0.w
+              dc.l    default_trap_handler            ; $A4.w
+              dc.l    default_trap_handler            ; $A8.w
+              dc.l    default_trap_handler            ; $AC.w
+              dc.l    default_trap_handler            ; $B0.w
+              dc.l    default_trap_handler            ; $B4.w
+              dc.l    default_trap_handler            ; $B8.w
+              dc.l    default_trap_handler            ; $BC.w - Trap 15
+                            
+              
 
