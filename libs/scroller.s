@@ -1,19 +1,97 @@
+;
+;    NOTES:
+;         1) The 'View' represents the scrollers logical view window into the world.
+;              i) It represents its pixel position into a larger world defined by the tile-map
+;              ii) The world 'units' are pixels to keep things easy and hopefully fast.
+;              iii) The view co-ordinates represent the top-left position of the 'View' into the tile-map world
+;              iv) The view position is changed by updating the x,y speed/velocity values.
+;              v) If the view speed exceeds the tile x or y size then this will result in the scroll buffer being updated more thsn once.
+;
+;         2) The 'Tile-Map' is a 2d array of values that are used to identify the 'tile' graphics used to build up the scrolling display.
+;              i) The maximum tile map size is 4096 tiles wide by 4096 tiles high (max view scroll area of 65536 x 65536)
+;              ii) In this verion of the scroller, each Tile is 16x16 pixels in size.
+;
+;         2) The 'Buffer' represents the memory and data required to display the scrolling 'View'
+;              i) It repesents the memory used to build the view using various hardware techniques to provide the illusion on a large scrolling world'
+;              ii) The buffer display is built up using a grid of 'Tiles' which are defined in by the 'tile-map'
+;
+;
+;
+               rsreset
+INIT_TILEMAP_PTR    rs.l      1    ; address ptr to the tile-map
+INIT_TILEGFX_PTR    rs.l      1    ; address ptr to the tile-gfx
+INIT_TILEMAP_WIDTH  rs.w      0    ; tile-map width (number of tiles wide)
+INIT_TILEMAP_HEIGHT rs.w      0    ; tile_map height (number of tiles high)
+
+scr2_init_struct
+                    dc.l      0    ; INIT_TILEMAP_PTR 
+                    dc.l      0    ; INIT_TILEGFX_PTR
+                    dc.w      0    ; INIT_TILEMAP_WIDTH
+                    dc.w      0    ; INIT_TILEMAP_HEIGHT
+
+
+
+               rsreset
+SCR2_VIEW_STRUCT    rs.l      1         ; address pointer to view structure
+SCR2_BUFFER_STRUCT  rs.l      1         ; address pointer to buffer structure
+SCR2_TILEMAP_STRUCT rs.l      1         ; address pointer to tile-map structure
+
+scr2_struct
+                    dc.l      scr2_view_struct
+                    dc.l      scr2_buffer_struct
+                    dc.l      scr_tilemap_struct
+
+
+               rsreset
+SCR2_VIEW_X_PX      rs.w      1         ; max view xpos = 65535 = 204.8 lo-res screens wide (320px wide)
+SCR2_VIEW_Y_PX      rs.w      1         ; max view ypos = 65535 = 256 lo-res screens high (256px high)
+SCR2_VIEW_X_VEL     rs.w      1         ; view x velocity in pixels per update
+SCR2_VIEW_Y_VEL     rs.w      1         ; view y velocity in pixels per update
+
+scr2_view_struct
+                    dc.w      0         ; SCR2_VIEW_X_PX - scroll view window x position 0-65535
+                    dc.w      0         ; SCR2_VIEW_Y_PX - scroll view window y position 0-65536
+                    dc.w      0         ; SCR2_VIEW_X_VEL - view x velocity in pixels per update
+                    dc.w      0         ; SCR2_VIEW_y_VEL - view y velocity in pixels per update
+
+               rsreset
+SCR2_BUFFER_PTR     rs.l      1         ; address ptr to the buffer display memory
+SCR2_BUFFER_X_PX    rs.w      1         ; buffer x soft scroll position in pixels
+SCR2_BUFFER_Y_PX    rs.w      1         ; buffer y soft scroll position in pixels
+
+scr2_buffer_struct
+                    dc.l      buffer_bitplane     ; SCR2_BUFFER_PTR - address ptr to buffer memory
+                    dc.w      0                   ; SCR2_BUFFER_X_PX - buffer x scroll position in pixels 
+                    dc.w      0                   ; SCR2_BUFFER_Y_PX - buffer y scroll position in pixels
+
+
+               rsreset
+SCR_TILEMAP_PTR     rs.l      1         ; tile-map address ptr
+SCR_TILEGFX_PTR     rs.l      1         ; tile-map gfx address ptr
+SCR_TILEMAP_WIDTH   rs.w      1         ; tile-map width in tiles
+SCR_TILEMAP_HEIGHT  rs.w      1         ; tile-map height in tiles
+
+scr_tilemap_struct
+                    dc.l      0         ; SCR_TILEMAP_PTR
+                    dc.l      0         ; SCR_TILEGFX_PTR
+                    dc.w      0         ; SCR_TILEMAP_WIDTH
+                    dc.w      0         ; SCR_TILEMAP_HEIGHT
+
 
 
                ; IN:
-               ;    a0.l - scroll_data - structure to scroll initialisatoin data
+               ;    a0.l -
 scr2_initialise
-                    ; IN:
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
-                    ;   - a0.l = scroll data structure
-               moveq     #0,d0
-               moveq     #0,d1
-               moveq     #0,d2
-               moveq     #0,d3
-               lea       scroll_data,a0
+               lea       scr2_struct,a1
+
+               ; init tile-map values
+               lea       SCR2_TILEMAP_STRUCT(a1),a2
+               move.l    INIT_TILEMAP_PTR(a0),SCR_TILEMAP_PTR(a2)
+               move.l    INIT_TILEGFX_PTR(a0),SCR_TILEGFX_PTR(a2)
+               move.w    INIT_TILEMAP_WIDTH(a0),SCR_TILEMAP_WIDTH(a2)
+               move.w    INIT_TILEMAP_HEIGHT(a0),SCR_TILEMAP_HEIGHT(a2)
+
+               bsr       scr2_init_copper_wait_table
                jsr       scr2_scr_blit_tile_buffer
                jsr       scr2_init_scroll
 
@@ -341,63 +419,63 @@ scr2_scr_blit_tile
 
 
 
-                    ; ---------------- scroll tile data ---------------
-                    ; scroll is currently 16x16 tiles
-                    ; horizontal view is 20 tiles (40 bytes = 320 pixels wide)
-                    ; visible vertical view is 16 tiles high (16 tiles = 256 pixels high)
-                    ; offscreen vertical view is 2 tiles high (2 tiles = 32 pixels high)
-                    ; one buffer of tile data = 20 x 18 tiles = 360 bytes
-                    ;
-                    rsreset
-SCR_TILEDATA_PTR            rs.l    1               ; ptr to tile map data
-SCR_TILEGFX_PTR             rs.l    1               ; ptr to tile gfx
-SCR_TILEGFX_SIZE            rs.w    1               ; Size of each tile in bytes
-SCR_TILEGFX_WIDTH_PX        rs.w    1               ; Width of each tile in pixels
-SCR_TILEGFX_HEIGHT_PX       rs.w    1               ; Height of each tile in pixels
-SCR_TILEDATA_WIDTH          rs.w    1               ; tile map data - number of tiles wide
-SCR_TILEDATA_HEIGHT         rs.w    1               ; tile map data - number of tiles high
+;                    ; ---------------- scroll tile data ---------------
+;                    ; scroll is currently 16x16 tiles
+;                    ; horizontal view is 20 tiles (40 bytes = 320 pixels wide)
+;                    ; visible vertical view is 16 tiles high (16 tiles = 256 pixels high)
+;                    ; offscreen vertical view is 2 tiles high (2 tiles = 32 pixels high)
+;                    ; one buffer of tile data = 20 x 18 tiles = 360 bytes
+;                    ;
+;                    rsreset
+;SCR_TILEDATA_PTR            rs.l    1               ; ptr to tile map data
+;SCR_TILEGFX_PTR             rs.l    1               ; ptr to tile gfx
+;SCR_TILEGFX_SIZE            rs.w    1               ; Size of each tile in bytes
+;SCR_TILEGFX_WIDTH_PX        rs.w    1               ; Width of each tile in pixels
+;SCR_TILEGFX_HEIGHT_PX       rs.w    1               ; Height of each tile in pixels
+;SCR_TILEDATA_WIDTH          rs.w    1               ; tile map data - number of tiles wide
+;SCR_TILEDATA_HEIGHT         rs.w    1               ; tile map data - number of tiles high;
+;
+;SCR_VIEW_X_PX               rs.w    1               ; Left co-ord of view window (pixel value)
+;SCR_VIEW_X_IDX              rs.w    1               ; Left co-ord of view window (tile x index)
+;SCR_VIEW_Y_PX               rs.w    1               ; Top co-ord of view window (pixel value)
+;SCR_VIEW_Y_IDX              rs.w    1               ; Top co-ord of view window (tile y index);
+;
+;SCR_BUFFER_PTR              rs.l    1               ; Display buffer ptr
+;SCR_BUFFER_WIDTH            rs.w    1               ; Display buffer width (bytes)
+;SCR_BUFFER_HEIGHT           rs.w    1               ; Display buffer height (rasters)
+;SCR_DISPLAY_WIDTH_TILES     rs.w    1               ; Display Tiles Wide
+;SCR_DISPLAY_HEIGHT_TILES    rs.w    1               ; Display Tiles High
+;SCR_BUFFER_Y_PX             rs.w    1               ; Vertical Scroll Pixel Value (buffer soft scroll)
+;SCR_BUFFER_X_PX             rs.w    1               ; Horizontal Scroll Pixel Value (buffer soft scroll)
+;SCR_BUFFER_Y_IDX            rs.w    1               ; Scroll buffer new data y tile index
+;SCR_BUFFER_X_IDX            rs.w    1               ; Scroll buffer new data x tile index
+;
+;SCR_VERT_SCROLL_SPEED       rs.w    1               ; Vertical Scroll Speed +/-
+;
 
-SCR_VIEW_X_PX               rs.w    1               ; Left co-ord of view window (pixel value)
-SCR_VIEW_X_IDX              rs.w    1               ; Left co-ord of view window (tile x index)
-SCR_VIEW_Y_PX               rs.w    1               ; Top co-ord of view window (pixel value)
-SCR_VIEW_Y_IDX              rs.w    1               ; Top co-ord of view window (tile y index)
 
-SCR_BUFFER_PTR              rs.l    1               ; Display buffer ptr
-SCR_BUFFER_WIDTH            rs.w    1               ; Display buffer width (bytes)
-SCR_BUFFER_HEIGHT           rs.w    1               ; Display buffer height (rasters)
-SCR_DISPLAY_WIDTH_TILES     rs.w    1               ; Display Tiles Wide
-SCR_DISPLAY_HEIGHT_TILES    rs.w    1               ; Display Tiles High
-SCR_BUFFER_Y_PX             rs.w    1               ; Vertical Scroll Pixel Value (buffer soft scroll)
-SCR_BUFFER_X_PX             rs.w    1               ; Horizontal Scroll Pixel Value (buffer soft scroll)
-SCR_BUFFER_Y_IDX            rs.w    1               ; Scroll buffer new data y tile index
-SCR_BUFFER_X_IDX            rs.w    1               ; Scroll buffer new data x tile index
-
-SCR_VERT_SCROLL_SPEED       rs.w    1               ; Vertical Scroll Speed +/-
-
-
-
-                      even
-scroll_data
-.tiledata_ptr           dc.l    scroll_tile_data
-.tilegfx_ptr            dc.l    tile_gfx
-.tilegfx_size           dc.w    32              ; each tile is 32 bytes in size
-.tilegfx_width_px       dc.w    16              ; tile gfx = 16 pixels wide
-.tilegfx_height_px      dc.w    16              ; tile gfx = 16 pixles high
-.tiledata_width         dc.w    20              ; tiles wide (columns)
-.tiledata_height        dc.w    40              ; tiles high (lines)
-.view_x                 dc.w    0               ; world pixel scroll pos (from top left)
-.view_x_idx             dc.w    0               ; tile map x index
-.view_y                 dc.w    0               ; world pixel scroll pos (from top left)
-.view_y_idx             dc.w    0               ; tile map y index
-.buffer_ptr             dc.l    bitplane        ; display buffer address
-.buffer_width           dc.w    40              ; display buffer width (bytes)
-.buffer_height          dc.w    256+32          ; display buffer height (rasters)
-.display_tiles_width    dc.w    20              ; the display is 20 tiles wide (visible scroll area)
-.display_tiles_high     dc.w    18              ; the display is 18 tiles high (visible scroll area)
-.vert_scroll_px         dc.w    0
-.horz_scroll_px         dc.w    0
-.vert_scroll_speed      dc.w    1               ; vertical scroll speed
-
+;                      even
+;scroll_data
+;.tiledata_ptr           dc.l    scroll_tile_data
+;.tilegfx_ptr            dc.l    tile_gfx
+;.tilegfx_size           dc.w    32              ; each tile is 32 bytes in size
+;.tilegfx_width_px       dc.w    16              ; tile gfx = 16 pixels wide
+;.tilegfx_height_px      dc.w    16              ; tile gfx = 16 pixles high
+;.tiledata_width         dc.w    20              ; tiles wide (columns)
+;.tiledata_height        dc.w    40              ; tiles high (lines)
+;.view_x                 dc.w    0               ; world pixel scroll pos (from top left)
+;.view_x_idx             dc.w    0               ; tile map x index
+;.view_y                 dc.w    0               ; world pixel scroll pos (from top left)
+;.view_y_idx             dc.w    0               ; tile map y index
+;.buffer_ptr             dc.l    bitplane        ; display buffer address
+;.buffer_width           dc.w    40              ; display buffer width (bytes)
+;.buffer_height          dc.w    256+32          ; display buffer height (rasters)
+;.display_tiles_width    dc.w    20              ; the display is 20 tiles wide (visible scroll area)
+;.display_tiles_high     dc.w    18              ; the display is 18 tiles high (visible scroll area)
+;.vert_scroll_px         dc.w    0
+;.horz_scroll_px         dc.w    0
+;.vert_scroll_speed      dc.w    1               ; vertical scroll speed
+;
 
 
 
@@ -783,5 +861,56 @@ copper_wait_table
                         dc.b    $2b,$2c     ; 255
 copper_wait_table_end
 
+
+
+buffer_bitplane  ; 320 x 288    
+                ; 0-15 rasters
+                dcb.l   (40*8)/4,$0f0f0f0f
+                dcb.l   (40*8)/4,$f0f0f0f0
+                ; 16-31 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 32-47 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 48-63 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 64-79 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 80-95 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 96-111 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 112-127 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; 128-255 rasters
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                dcb.l   (40*8)/4,$ff00ff00
+                dcb.l   (40*8)/4,$00ff00ff
+                ; additional 32 rasters (offscreen scroll)
+                ; 0-15 rasters
+                dcb.l   (40*8)/4,$ffff0000
+                dcb.l   (40*8)/4,$0000ffff
+                ; 16-31 rasters
+                dcb.l   (40*8)/4,$ffff0000
+                dcb.l   (40*8)/4,$0000ffff            
 
 

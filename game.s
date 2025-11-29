@@ -58,6 +58,11 @@ startup:
 
 
             ; initialise game routines
+               lea       scr2_init_struct,a0
+               move.l    #scroll_tile_map,INIT_TILEMAP_PTR(a0)
+               move.l    #tile_gfx,INIT_TILEGFX_PTR(a0)
+               move.w    #20,INIT_TILEMAP_WIDTH(a0)
+               move.w    #40,INIT_TILEMAP_HEIGHT(a0)
                jsr       scr2_initialise
 
 
@@ -262,55 +267,6 @@ copper_wrap_bpl
               include "texttyper.s"
 
 
-bitplane      
-                ; 0-15 rasters
-                dcb.l   (40*8)/4,$0f0f0f0f
-                dcb.l   (40*8)/4,$f0f0f0f0
-                ; 16-31 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 32-47 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 48-63 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 64-79 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 80-95 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 96-111 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 112-127 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; 128-255 rasters
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                dcb.l   (40*8)/4,$ff00ff00
-                dcb.l   (40*8)/4,$00ff00ff
-                ; additional 32 rasters (offscreen scroll)
-                ; 0-15 rasters
-                dcb.l   (40*8)/4,$ffff0000
-                dcb.l   (40*8)/4,$0000ffff
-                ; 16-31 rasters
-                dcb.l   (40*8)/4,$ffff0000
-                dcb.l   (40*8)/4,$0000ffff            
 
 
 init_copper_display
@@ -364,8 +320,8 @@ set_scroll_speed
 
 
 
-
-scroll_tile_data
+                         ; 20 x 40
+scroll_tile_map
                         dc.b    $01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$01   ; 000
                         dc.b    $00,$00,$01,$01,$01,$00,$01,$01,$01,$00,$01,$01,$01,$00,$00,$00,$00,$00,$01,$00   ; 001
                         dc.b    $00,$00,$00,$01,$00,$00,$01,$00,$01,$00,$01,$00,$01,$00,$00,$00,$00,$01,$00,$00   ; 002
