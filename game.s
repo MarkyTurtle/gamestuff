@@ -104,7 +104,7 @@ level3_interrupt_handler
                jsr       decode_joystick_port2_buttons
 
           ; scroll
-               jsr       set_scroll_speed
+               ;jsr       set_scroll_speed
                jsr       scr2_scroll_update
 
 
@@ -264,7 +264,7 @@ copper_wrap_bpl
               incdir  "libs/"
               include "joystick.s"
 
-              include "texttyper.s"
+              ;include "texttyper.s"
 
 
 
@@ -272,7 +272,9 @@ copper_wrap_bpl
 init_copper_display
             lea     copper_bpl,a0
             lea     copper_wrap_bpl,a1
-            move.l  #bitplane,d0
+            lea     scr2_struct,a2
+            move.l  SCR2_BUFFER_STRUCT(a2),a2
+            move.l  SCR2_BUFFER_PTR,d0
               
             move.w  d0,2(a0)
             move.w  d0,2(a1)                ; copper wrap bpl
@@ -293,29 +295,29 @@ init_copper_display
 
 
         ; ----------- set vertical scroll speed from joystick input ------------
-set_scroll_speed
-            lea         scroll_data,a0
-            move.w      controller_port2,d0
-
-        ; check joystick down
-.chk_joy_down
-            btst.l      #JOYSTICK_DOWN,d0
-            beq.s       .check_up
-.is_down
-            move.w      #$0001,SCR_VERT_SCROLL_SPEED(a0)
-            rts
-
-        ; check joystick up
-.check_up
-            btst.l      #JOYSTICK_UP,d0
-            beq.s       .not_up_or_down
-.is_up 
-            move.w      #$ffff,SCR_VERT_SCROLL_SPEED(a0)
-            rts
-
-.not_up_or_down
-            move.w      #$0000,SCR_VERT_SCROLL_SPEED(a0)
-            rts
+;set_scroll_speed
+;            lea         scroll_data,a0
+;            move.w      controller_port2,d0
+;
+;        ; check joystick down
+;.chk_joy_down
+;            btst.l      #JOYSTICK_DOWN,d0
+;            beq.s       .check_up
+;.is_down
+;            move.w      #$0001,SCR_VERT_SCROLL_SPEED(a0)
+;            rts
+;
+;        ; check joystick up
+;.check_up
+;            btst.l      #JOYSTICK_UP,d0
+;            beq.s       .not_up_or_down
+;.is_up 
+;            move.w      #$ffff,SCR_VERT_SCROLL_SPEED(a0)
+;            rts
+;
+;.not_up_or_down
+;            move.w      #$0000,SCR_VERT_SCROLL_SPEED(a0)
+;            rts
 
 
 

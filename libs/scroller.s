@@ -58,18 +58,21 @@ scr2_view_struct
 SCR2_BUFFER_PTR     rs.l      1         ; address ptr to the buffer display memory
 SCR2_BUFFER_X_PX    rs.w      1         ; buffer x soft scroll position in pixels
 SCR2_BUFFER_Y_PX    rs.w      1         ; buffer y soft scroll position in pixels
+SCR2_BUFFER_WIDTH   rs.w      1         ; pixel width of the scroll buffer
+SCR2_BUFFER_HEIGHT  rs.w      1         ; pixel height of the scroll buffer
 
 scr2_buffer_struct
                     dc.l      buffer_bitplane     ; SCR2_BUFFER_PTR - address ptr to buffer memory
                     dc.w      0                   ; SCR2_BUFFER_X_PX - buffer x scroll position in pixels 
                     dc.w      0                   ; SCR2_BUFFER_Y_PX - buffer y scroll position in pixels
-
+                    dc.w      320                 ; SCR2_BUFFER_WIDTH in pixels
+                    dc.w      288                 ; SCR2_BUFFER_HEIGHT in pixels
 
                rsreset
-SCR_TILEMAP_PTR     rs.l      1         ; tile-map address ptr
-SCR_TILEGFX_PTR     rs.l      1         ; tile-map gfx address ptr
-SCR_TILEMAP_WIDTH   rs.w      1         ; tile-map width in tiles
-SCR_TILEMAP_HEIGHT  rs.w      1         ; tile-map height in tiles
+SCR2_TILEMAP_PTR     rs.l      1         ; tile-map address ptr
+SCR2_TILEGFX_PTR     rs.l      1         ; tile-map gfx address ptr
+SCR2_TILEMAP_WIDTH   rs.w      1         ; tile-map width in tiles
+SCR2_TILEMAP_HEIGHT  rs.w      1         ; tile-map height in tiles
 
 scr_tilemap_struct
                     dc.l      0         ; SCR_TILEMAP_PTR
@@ -80,20 +83,19 @@ scr_tilemap_struct
 
 
                ; IN:
-               ;    a0.l -
+               ;    a0.l - scroll initialisatoin structure
 scr2_initialise
                lea       scr2_struct,a1
 
-               ; init tile-map values
+               ; init scroll structure values from init values
                lea       SCR2_TILEMAP_STRUCT(a1),a2
-               move.l    INIT_TILEMAP_PTR(a0),SCR_TILEMAP_PTR(a2)
-               move.l    INIT_TILEGFX_PTR(a0),SCR_TILEGFX_PTR(a2)
-               move.w    INIT_TILEMAP_WIDTH(a0),SCR_TILEMAP_WIDTH(a2)
-               move.w    INIT_TILEMAP_HEIGHT(a0),SCR_TILEMAP_HEIGHT(a2)
+               move.l    INIT_TILEMAP_PTR(a0),SCR2_TILEMAP_PTR(a2)
+               move.l    INIT_TILEGFX_PTR(a0),SCR2_TILEGFX_PTR(a2)
+               move.w    INIT_TILEMAP_WIDTH(a0),SCR2_TILEMAP_WIDTH(a2)
+               move.w    INIT_TILEMAP_HEIGHT(a0),SCR2_TILEMAP_HEIGHT(a2)
 
-               bsr       scr2_init_copper_wait_table
-               jsr       scr2_scr_blit_tile_buffer
-               jsr       scr2_init_scroll
+               ;bsr       scr2_init_copper_wait_table
+               bsr       scr2_scr_blit_tile_buffer
 
                rts
 
@@ -104,259 +106,273 @@ scr2_initialise
                ;
 scr2_scroll_update
             ;jsr     scrv2_vertical_joystick_scroll                ; set vertical scroll speed by joystick input
-            jsr     scr2_vertical_soft_buffer_scroll             ; update vertical soft scroll values of 'scroll buffer'
-            jsr     scr2_vertical_soft_view_scroll               ; update vertical soft scoll values of 'view window'
-            jsr     scr2_vertical_calc_wrap_wait                 ; set vertical scroll copper list buffer wrap values
-            jsr     scr2_vertical_set_copper_scroll              ; set copper list bitplane ptrs
-            jsr     scr2_vertical_blit_new_line                  ; check if new vertical data needs to be added to the screen buffer.
+            ;jsr     scr2_vertical_soft_buffer_scroll             ; update vertical soft scroll values of 'scroll buffer'
+            ;jsr     scr2_vertical_soft_view_scroll               ; update vertical soft scoll values of 'view window'
+            ;jsr     scr2_vertical_calc_wrap_wait                 ; set vertical scroll copper list buffer wrap values
+            ;jsr     scr2_vertical_set_copper_scroll              ; set copper list bitplane ptrs
+            ;jsr     scr2_vertical_blit_new_line                  ; check if new vertical data needs to be added to the screen buffer.
             rts
 
         ; ----------- blit new gfx into display buffer -------------
         ;   IN:
         ;     a0.l = scroll_data
-scr2_vertical_blit_new_line
-          ; check if hard scroll line has changes
-            lea     scroll_data,a0
-            moveq   #0,d0
-            move.w  SCR_VIEW_Y_PX(a0),d0
-            ext.l   d0
-            beq     .cont
-            divs.w  #16,d0
-.cont
-            cmp.w   SCR_VIEW_Y_IDX(a0),d0
-            bgt.s   .add_bottom_row             ; scroll up (new top row required)
-            blt.s   .add_top_row                ; scroll down (new bottom row required)
-            rts                                 ; no new data required
-
-.add_top_row
-            ;tst.w   d0
-            ;bge.s   .no_tilemap_wrap
-.is_tilemap_wrap
-            ;move.w  SCR_TILEDATA_HEIGHT(a0),d0
-.no_tilemap_wrap
-            ;move.w  d0,SCR_VIEW_Y_IDX(a0)      ; store new tile index
-            ;move.w  d0,d1
-
-             ; get left of screen x tile index  (d0)
-            ;move.w  SCR_VIEW_X_IDX(a0),d0
-            ; get destination left x tile index (d2)
-            ;move.w  d0,d2
-
-            ; get desination y tile index (d3)
-            ;moveq   #0,d3
-            ;move.w  SCR_BUFFER_Y_IDX(a0),d3
-
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
-                    ;   - a0.l = scroll data structure
-            ;jsr     scr_blit_tile_row
-            move.w  #$0f0,$DFF180
-            rts
-
-.add_bottom_row
-            ;move.w  d0,d4
-            ;add.w   SCR_DISPLAY_HEIGHT_TILES(a0),d4            
-            ;cmp.w   SCR_TILEDATA_HEIGHT(a0),d4
-            ;blt.s   .no_wrap_bottom
-.is_wrap_bottom
-            ;moveq   #0,d0
-.no_wrap_bottom
-            ; get top of screen y tile index (d1)
-            ;move.w  d0,SCR_VIEW_Y_IDX(a0)             ; store new tile index (top of screen)
-            ;add.w   SCR_DISPLAY_HEIGHT_TILES(a0),d0   ; get y row index for bottom of the screen
-            ;sub.w   #1,d0
-            ;move.w  d0,d1
-
-            ; get left of screen x tile index  (d0)
-            ;move.w  SCR_VIEW_X_IDX(a0),d0
-            ; get destination left x tile index (d2)
-            ;move.w  d0,d2
-
-            ; get desination y tile index (d3)
-            ;moveq   #0,d3
-            ;move.w  SCR_BUFFER_Y_IDX(a0),d3
-
-
-
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
-                    ;   - a0.l = scroll data structure
-            ;jsr     scr_blit_tile_row
-            move.w  #$f00,$DFF180
-            rts
-
-
-
-scr2_vertical_soft_view_scroll
-            lea         scroll_data,a0
-            move.w      SCR_VIEW_Y_PX(a0),d0
-            move.w      SCR_VERT_SCROLL_SPEED(a0),d7
-            add.w       d7,d0                           ; update view y scroll
-
-            move.w      SCR_BUFFER_HEIGHT(a0),d7        ; tile height of scroll
-            muls        SCR_TILEGFX_HEIGHT_PX(a0),d7    ; pixel height of scroll
-
-        ; check scroll down wrap
-.chk_down_wrap
-            cmp.w       d7,d0
-            blt         .chk_up_wrap
-.is_down_wrap
-            sub.w       d7,d0
-            bra         .cont
-
-        ; check scroll up wrap
-.chk_up_wrap
-            cmp.w       #$0000,d0
-            bge         .cont
-.is_up_wrap
-            add.w       d7,d0
-
-        ; store soft scroll value
-.cont
-            move.w      d0,SCR_VIEW_Y_PX(a0)
-
-            rts
-
-
-        ; --------------- Do Vertical Soft Scroll based on Scroll Speed ------------
-scr2_vertical_soft_buffer_scroll
-            lea         scroll_data,a0
-            move.w      SCR_BUFFER_Y_PX(a0),d0
-            move.w      SCR_VERT_SCROLL_SPEED(a0),d7
-            add.w       d7,d0                           ; update buffer y scroll
-            ;add.w       d7,SCR_VIEW_Y_PX(a0)            ; update world view y scroll
-
-        ; check scroll down wrap
-.chk_down_wrap
-            cmp.w       SCR_BUFFER_HEIGHT(a0),d0
-            blt         .chk_up_wrap
-.is_down_wrap
-            sub.w       SCR_BUFFER_HEIGHT(a0),d0
-            bra         .cont
-
-        ; check scroll up wrap
-.chk_up_wrap
-            cmp.w       #$0000,d0
-            bge         .cont
-.is_up_wrap
-            add.w       SCR_BUFFER_HEIGHT(a0),d0
-
-        ; store soft scroll value
-.cont
-            move.w      d0,SCR_BUFFER_Y_PX(a0)
-
-        ; update new data tile index (ready for hard-scroll)
-        ; probably move this so it's only executed when hard-scrolling is occurring.
-            tst.w     d0
-            beq.s     .is_zero
-.not_zero
-            ext.l     d0
-            divs      #16,d0
-.is_zero
-            sub.w     #1,d0
-            bpl.s     .is_plus
-.is_neg
-            add.w     SCR_DISPLAY_HEIGHT_TILES(a0),d0
-.is_plus
-            move.w    d0,SCR_BUFFER_Y_IDX(a0)
-
-            rts
+;scr2_vertical_blit_new_line
+;          ; check if hard scroll line has changes
+;            lea     scroll_data,a0
+;            moveq   #0,d0
+;            move.w  SCR_VIEW_Y_PX(a0),d0
+;            ext.l   d0
+;            beq     .cont
+;            divs.w  #16,d0
+;.cont
+;            cmp.w   SCR_VIEW_Y_IDX(a0),d0
+;            bgt.s   .add_bottom_row             ; scroll up (new top row required)
+;            blt.s   .add_top_row                ; scroll down (new bottom row required)
+;            rts                                 ; no new data required
+;
+;.add_top_row
+;            ;tst.w   d0
+;            ;bge.s   .no_tilemap_wrap
+;.is_tilemap_wrap
+;            ;move.w  SCR_TILEDATA_HEIGHT(a0),d0
+;.no_tilemap_wrap
+;            ;move.w  d0,SCR_VIEW_Y_IDX(a0)      ; store new tile index
+;            ;move.w  d0,d1
+;
+;             ; get left of screen x tile index  (d0)
+;            ;move.w  SCR_VIEW_X_IDX(a0),d0
+;            ; get destination left x tile index (d2)
+;            ;move.w  d0,d2
+;
+;            ; get desination y tile index (d3)
+;            ;moveq   #0,d3
+;            ;move.w  SCR_BUFFER_Y_IDX(a0),d3
+;
+;                    ;   - d0.w = source tile x index (scroll data co-ords)
+;                    ;   - d1.w = source tile y index (scroll data co-ords)
+;                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+;                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+;                    ;   - a0.l = scroll data structure
+;            ;jsr     scr_blit_tile_row
+;            move.w  #$0f0,$DFF180
+;            rts
+;
+;.add_bottom_row
+;            ;move.w  d0,d4
+;            ;add.w   SCR_DISPLAY_HEIGHT_TILES(a0),d4            
+;            ;cmp.w   SCR_TILEDATA_HEIGHT(a0),d4
+;            ;blt.s   .no_wrap_bottom
+;.is_wrap_bottom
+;            ;moveq   #0,d0
+;.no_wrap_bottom
+;            ; get top of screen y tile index (d1)
+;            ;move.w  d0,SCR_VIEW_Y_IDX(a0)             ; store new tile index (top of screen)
+;            ;add.w   SCR_DISPLAY_HEIGHT_TILES(a0),d0   ; get y row index for bottom of the screen
+;            ;sub.w   #1,d0
+;            ;move.w  d0,d1
+;
+;            ; get left of screen x tile index  (d0)
+;            ;move.w  SCR_VIEW_X_IDX(a0),d0
+;            ; get destination left x tile index (d2)
+;            ;move.w  d0,d2
+;
+;            ; get desination y tile index (d3)
+;            ;moveq   #0,d3
+;            ;move.w  SCR_BUFFER_Y_IDX(a0),d3
+;
+;
+;
+;                    ;   - d0.w = source tile x index (scroll data co-ords)
+;                    ;   - d1.w = source tile y index (scroll data co-ords)
+;                    ;   - d2.w = destination tile x-index (display buffer co-ords)
+;                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+;                    ;   - a0.l = scroll data structure
+;            ;jsr     scr_blit_tile_row
+;            move.w  #$f00,$DFF180
+;            rts
 
 
 
-        ; ----------------- Set scroll buffer wrap vertical copper wait ------------------
-scr2_vertical_calc_wrap_wait 
-            lea         scroll_data,a0
-            move.w      SCR_BUFFER_Y_PX(a0),d0
-            asl.w       #1,d0
-
-            lea         copper_wait_table,a0
-            moveq       #0,d1
-            moveq       #0,d2
-            move.b      (a0,d0.w),d1            ; bpl wait
-            move.b      1(a0,d0.w),d2           ; copper wait
-
-            lea.l       copper_wrap_wait,a0
-            move.b      d1,(a0)
-            lea.l       copper_wrap_bpl_wait,a0
-            move.b      d2,(a0)
-
-            rts
-
-
-
-        ; ------------------ Set scroll buffer top bitplane ptrs in copper ----------------
-scr2_vertical_set_copper_scroll
-            lea         scroll_data,a0
-        ; update bitplane ptrs
-            moveq       #0,d0
-            moveq       #0,d1
-            move.l      #bitplane,d0
-            move.w      SCR_BUFFER_Y_PX(a0),d1
-            mulu        #40,d1
-            add.l       d1,d0
-
-            lea     copper_bpl,a0
-              
-            move.w  d0,2(a0)
-            swap.w  d0
-            move.w  d0,6(a0)
-
-            rts
+;scr2_vertical_soft_view_scroll
+;            lea         scroll_data,a0
+;            move.w      SCR_VIEW_Y_PX(a0),d0
+;            move.w      SCR_VERT_SCROLL_SPEED(a0),d7
+;            add.w       d7,d0                           ; update view y scroll
+;
+;            move.w      SCR_BUFFER_HEIGHT(a0),d7        ; tile height of scroll
+;            muls        SCR_TILEGFX_HEIGHT_PX(a0),d7    ; pixel height of scroll
+;
+;        ; check scroll down wrap
+;.chk_down_wrap
+;            cmp.w       d7,d0
+;            blt         .chk_up_wrap
+;.is_down_wrap
+;            sub.w       d7,d0
+;            bra         .cont
+;
+;        ; check scroll up wrap
+;.chk_up_wrap
+;            cmp.w       #$0000,d0
+;            bge         .cont
+;.is_up_wrap
+;            add.w       d7,d0
+;
+;        ; store soft scroll value
+;.cont
+;            move.w      d0,SCR_VIEW_Y_PX(a0)
+;
+;            rts
 
 
+;        ; --------------- Do Vertical Soft Scroll based on Scroll Speed ------------
+;scr2_vertical_soft_buffer_scroll
+;            lea         scroll_data,a0
+;            move.w      SCR_BUFFER_Y_PX(a0),d0
+;            move.w      SCR_VERT_SCROLL_SPEED(a0),d7
+;            add.w       d7,d0                           ; update buffer y scroll
+;            ;add.w       d7,SCR_VIEW_Y_PX(a0)            ; update world view y scroll
+;
+;        ; check scroll down wrap
+;.chk_down_wrap
+;            cmp.w       SCR_BUFFER_HEIGHT(a0),d0
+;            blt         .chk_up_wrap
+;.is_down_wrap
+;            sub.w       SCR_BUFFER_HEIGHT(a0),d0
+;            bra         .cont
+;
+;        ; check scroll up wrap
+;.chk_up_wrap
+;            cmp.w       #$0000,d0
+;            bge         .cont
+;.is_up_wrap
+;            add.w       SCR_BUFFER_HEIGHT(a0),d0
+;
+;        ; store soft scroll value
+;.cont
+;            move.w      d0,SCR_BUFFER_Y_PX(a0)
+;
+;        ; update new data tile index (ready for hard-scroll)
+;        ; probably move this so it's only executed when hard-scrolling is occurring.
+;            tst.w     d0
+;            beq.s     .is_zero
+;.not_zero
+;            ext.l     d0
+;            divs      #16,d0
+;.is_zero
+;            sub.w     #1,d0
+;            bpl.s     .is_plus
+;.is_neg
+;            add.w     SCR_DISPLAY_HEIGHT_TILES(a0),d0
+;.is_plus
+;            move.w    d0,SCR_BUFFER_Y_IDX(a0)
+;
+;            rts
+;
 
+
+;        ; ----------------- Set scroll buffer wrap vertical copper wait ------------------
+;scr2_vertical_calc_wrap_wait 
+;            lea         scroll_data,a0
+;            move.w      SCR_BUFFER_Y_PX(a0),d0
+;            asl.w       #1,d0
+;
+;            lea         copper_wait_table,a0
+;            moveq       #0,d1
+;            moveq       #0,d2
+;            move.b      (a0,d0.w),d1            ; bpl wait
+;            move.b      1(a0,d0.w),d2           ; copper wait
+;
+;            lea.l       copper_wrap_wait,a0
+;            move.b      d1,(a0)
+;            lea.l       copper_wrap_bpl_wait,a0
+;            move.b      d2,(a0)
+;
+;            rts
+;
+
+
+;        ; ------------------ Set scroll buffer top bitplane ptrs in copper ----------------
+;scr2_vertical_set_copper_scroll
+;            lea         scroll_data,a0
+;        ; update bitplane ptrs
+;            moveq       #0,d0
+;            moveq       #0,d1
+;            move.l      #bitplane,d0
+;            move.w      SCR_BUFFER_Y_PX(a0),d1
+;            mulu        #40,d1
+;            add.l       d1,d0
+;
+;            lea     copper_bpl,a0
+;              
+;            move.w  d0,2(a0)
+;            swap.w  d0
+;            move.w  d0,6(a0)
+;
+;            rts
+;
 
 
 
 
+
+     macro px_to_tile_idx 
+px_to_tile_idx_\@
+     tst.w     \1
+     beq.s     .avoid_div_0
+     divs      #16,d1
+.avoid_div_0
+ 
+     endm
 
 
                     ; ---------------- blit buffer full of tile data to buffer --------------
                     ; IN:
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
                     ;
 scr2_scr_blit_tile_buffer
+                    lea       scr2_struct,a0
+                    move.l    SCR2_VIEW_STRUCT(a0),a1
+                    moveq     #0,d0
+                    moveq     #0,d2
+                    moveq     #0,d3
+                    moveq     #0,d4
 
-                    lea     scroll_data,a0
-                    moveq   #0,d0
-                    moveq   #0,d2
-                    moveq   #0,d3
+                  ; calc tile-map Y co-oord (top line's left-most tile index)
+.calc_tilemap_x_idx
+                    moveq     #0,d0
+                    move.w    SCR2_VIEW_X_PX(a1),d0
+                    px_to_tile_idx d0
 
-                  ; calc source tile Y co-oord (top line's initial tile index)
+                  ; calc source tile Y co-oord (top line's top-most tile index)
 .calc_top_row_idx
-                    moveq   #0,d1
-                    move.w  SCR_VIEW_Y_PX(a0),d1                        ; Get the View Windows's Y scroll co-oord
-                    beq     .store_top_row_idx
-                    divs.w  #16,d1
-.store_top_row_idx
-                    move.w  d1,SCR_VIEW_Y_IDX(a0)                 ; store initial tile y index
+                    moveq     #0,d1
+                    move.w    SCR2_VIEW_Y_PX(a1),d1 
+                    px_to_tile_idx d1
 
 .get_row_count
-                    move.w  SCR_DISPLAY_HEIGHT_TILES(a0),d4       ; display height in tiles
+                    move.l    SCR2_BUFFER_STRUCT(a0),a1
+                    move.w    SCR2_BUFFER_HEIGHT(a0),d4       ; display height in tiles
+                    px_to_tile_idx d4
                     subq    #1,d4
 .row_loop
                     jsr     scr2_scr_blit_tile_row
-                    add.w   #1,d1
-                    add.w   #1,d3
+                    add.w   #1,d1                           ; increment tile-map x index
+                    add.w   #1,d3                           ; increment buffer tile x index
                     dbf     d4,.row_loop
 
                     rts
 
+
+
+
+
+
                     ; ---------------- blit row of tile data to buffer --------------
                     ; IN:
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - d0.w = tile-map tile x index (scroll data co-ords)
+                    ;   - d1.w = tile-map tile y index (scroll data co-ords)
+                    ;   - d2.w = buffer tile x-index (display buffer co-ords)
+                    ;   - d3.w = buffer tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
                     ;
 scr2_scr_blit_tile_row   
@@ -374,32 +390,34 @@ scr2_scr_blit_tile_row
 
 
                     ; IN:
-                    ;   - d0.w = source tile x index (scroll data co-ords)
-                    ;   - d1.w = source tile y index (scroll data co-ords)
-                    ;   - d2.w = destination tile x-index (display buffer co-ords)
-                    ;   - d3.w = destination tile y-index (display buffer co-ords)
+                    ;   - d0.w = tile-map tile x index (scroll data co-ords)
+                    ;   - d1.w = tile-map tile y index (scroll data co-ords)
+                    ;   - d2.w = buffer tile x-index (display buffer co-ords)
+                    ;   - d3.w = buffer tile y-index (display buffer co-ords)
                     ;   - a0.l = scroll data structure
 scr2_scr_blit_tile   
                     movem.l d0-d7/a0,-(sp)
+                    move.l    SCR2_TILEMAP_STRUCT(a0),a1
+                    move.l    SCR2_BUFFER_STRUCT(a0),a3
                   ; get tile type value
-                    mulu    SCR_TILEDATA_WIDTH(a0),d1       ; get y index into scroll_tile_data
-                    add.w   d1,d0                           ; get x,y index into scroll_tile_data 
-                    move.l  SCR_TILEDATA_PTR(a0),a2         ; get tile data address 
-                    moveq   #0,d5  
-                    move.b  (a2,d0.w),d5                    ; get tile type value
+                    mulu      SCR2_TILEMAP_WIDTH(a1),d1          ; get y index into scroll_tile_data
+                    add.w     d1,d0                              ; get x,y index into scroll_tile_data 
+                    move.l    SCR2_TILEMAP_PTR(a1),a2            ; get tile data address 
+                    moveq     #0,d5  
+                    move.b    (a2,d0.w),d5                       ; get tile type value
 
                   ; calc source gfx ptr
-                    move.l  SCR_TILEGFX_PTR(a0),a2
-                    mulu    SCR_TILEGFX_SIZE(a0),d5                    
-                    lea     (a2,d5.w),a2                ; source tile gfx ptr
+                    move.l    SCR2_TILEGFX_PTR(a1),a2
+                    mulu      #32,d5                             ; Tile size in bytes                    
+                    lea       (a2,d5.w),a2                       ; source tile gfx ptr
 
                   ; calc destination gfx ptr
-                    move.l  SCR_BUFFER_PTR(a0),a3           ; destination bitplane ptr
-                    mulu    SCR_TILEGFX_HEIGHT_PX(a0),d3    ; get raster y from tile y
-                    mulu    SCR_BUFFER_WIDTH(a0),d3         ; get y byte offset into bitplane
-                    mulu    #2,d2                           ; get x word offset
-                    add.w   d2,d3                           ; get x,y byte offset into bitplane
-                    lea     (a3,d3.w),a3                    ; desination buffer ptr
+                    move.l  SCR2_BUFFER_PTR(a3),a4               ; destination bitplane ptr
+                    mulu    #16,d3                               ; get raster y from tile y (multiply by tile height)
+                    mulu    SCR2_BUFFER_WIDTH(a3),d3             ; get y byte offset into bitplane
+                    mulu    #2,d2                                ; get x word offset
+                    add.w   d2,d3                                ; get x,y byte offset into bitplane
+                    lea     (a4,d3.w),a4                         ; desination buffer ptr
 
                   ; blit tile
                     lea     CUSTOM,a6
@@ -411,7 +429,7 @@ scr2_scr_blit_tile
                     move.l  #$09F00000,BLTCON0(a6)    ; D=A, Transfer mode
                     move.l  a2,BLTAPT(a6)             ; src ptr
                     move.w  #0,BLTAMOD(a6)
-                    move.l  a3,BLTDPT(a6)             ; dest ptr
+                    move.l  a4,BLTDPT(a6)             ; dest ptr
                     move.w  #38,BLTDMOD(a6)
                     move.w  #(16<<6)+1,BLTSIZE(a6)           ; 16x16 blit - start   
                     movem.l (sp)+,d0-d7/a0  
@@ -480,54 +498,50 @@ scr2_scr_blit_tile
 
 
 
-scr2_init_scroll
-            bsr     scr2_init_copper_wait_table
-            rts
-
-          ; ------------- initialise copper wait table -----------------
-scr2_init_copper_wait_table
-            lea     copper_wait_table,a0
-            lea     scroll_data,a1
-            move.w  SCR_BUFFER_HEIGHT(a1),d0
-            sub.w   #$100,d0
-            bcs     .set_pal_wrap
-          ; set copper offscreen are wrap values
-.set_offscreen_wrap
-            sub.w   #$1,d0
-            bcs     .set_pal_wrap
-.offscreen_loop
-            move.b  #$ff,(a0)+
-            move.b  #$2c,(a0)+
-            tst.w   d0                        ; set z=1 if d0.w == 0
-            dbeq    d0,.offscreen_loop        ; exit loop when d0.w == 0
-          ; set copper pal area wrap values
-.set_pal_wrap
-            move.w  #$2c,d0
-.pal_loop   move.b  #$ff,(a0)+
-            move.b  d0,(a0)+
-            tst.w   d0
-            dbeq    d0,.pal_loop
-
-          ; set copper $ff-$2c
-.set_ntsc_wrap
-            move.w  #$fe,d0
-.ntsc_loop  move.b  d0,(a0)+
-            move.b  d0,(a0)
-            add.b   #$01,(a0)+
-            cmp.b   #$2b,d0
-            dbeq    d0,.ntsc_loop
-
-            lea   copper_wait_table_end,a1
-            cmp.l a0,a1
-            bne.s copper_table_error
-            
-            rts
-
-copper_table_error
-            lea   $dff000,a6
-            move.w  VHPOSR(a6),COLOR00(a6)
-            jmp   copper_table_error
-
+;          ; ------------- initialise copper wait table -----------------
+;scr2_init_copper_wait_table
+;            lea     copper_wait_table,a0
+;            lea     scroll_data,a1
+;            move.w  SCR_BUFFER_HEIGHT(a1),d0
+;            sub.w   #$100,d0
+;            bcs     .set_pal_wrap
+;          ; set copper offscreen are wrap values
+;.set_offscreen_wrap
+;            sub.w   #$1,d0
+;            bcs     .set_pal_wrap
+;.offscreen_loop
+;            move.b  #$ff,(a0)+
+;            move.b  #$2c,(a0)+
+;            tst.w   d0                        ; set z=1 if d0.w == 0
+;            dbeq    d0,.offscreen_loop        ; exit loop when d0.w == 0
+;          ; set copper pal area wrap values
+;.set_pal_wrap
+;            move.w  #$2c,d0
+;.pal_loop   move.b  #$ff,(a0)+
+;            move.b  d0,(a0)+
+;            tst.w   d0
+;            dbeq    d0,.pal_loop
+;
+;          ; set copper $ff-$2c
+;.set_ntsc_wrap
+;            move.w  #$fe,d0
+;.ntsc_loop  move.b  d0,(a0)+
+;            move.b  d0,(a0)
+;            add.b   #$01,(a0)+
+;            cmp.b   #$2b,d0
+;            dbeq    d0,.ntsc_loop
+;
+;            lea   copper_wait_table_end,a1
+;            cmp.l a0,a1
+;            bne.s copper_table_error
+;            
+;            rts
+;
+;copper_table_error
+;            lea   $dff000,a6
+;            move.w  VHPOSR(a6),COLOR00(a6)
+;            jmp   copper_table_error
+;
 
 
             ; ---------------------------------------------------------------
