@@ -41,8 +41,21 @@ startup:
                lea.l     vector_handler_table,a1
                jsr       kill_system
 
+               lea       CUSTOM,a6         
+               move.w    #$8240,DMACON(a6)     ; enable blitter dma
+
             ; enable joystick buttons
                move.w    #$ff00,POTGO(a6)
+
+
+            ; initialise game routines
+               lea       scr2_init_struct,a0
+               move.l    #scroll_tile_map,INIT_TILEMAP_PTR(a0)
+               move.l    #tile_gfx,INIT_TILEGFX_PTR(a0)
+               move.w    #20,INIT_TILEMAP_WIDTH(a0)
+               move.w    #40,INIT_TILEMAP_HEIGHT(a0)
+               jsr       scr2_initialise
+
 
             ; intialise copper display
                jsr       init_copper_display
@@ -54,16 +67,7 @@ startup:
                move.l    a0,COP1LC(a6)
                move.w    #$8280,DMACON(a6)     ; enable copper dma
                move.w    #$8300,DMACON(a6)     ; enable bitplane dma
-               move.w    #$8240,DMACON(a6)     ; enable blitter dma
 
-
-            ; initialise game routines
-               lea       scr2_init_struct,a0
-               move.l    #scroll_tile_map,INIT_TILEMAP_PTR(a0)
-               move.l    #tile_gfx,INIT_TILEGFX_PTR(a0)
-               move.w    #20,INIT_TILEMAP_WIDTH(a0)
-               move.w    #40,INIT_TILEMAP_HEIGHT(a0)
-               jsr       scr2_initialise
 
 
           ; enable interrupts
@@ -274,7 +278,7 @@ init_copper_display
             lea     copper_wrap_bpl,a1
             lea     scr2_struct,a2
             move.l  SCR2_BUFFER_STRUCT(a2),a2
-            move.l  SCR2_BUFFER_PTR,d0
+            move.l  SCR2_BUFFER_PTR(a2),d0
               
             move.w  d0,2(a0)
             move.w  d0,2(a1)                ; copper wrap bpl
@@ -323,6 +327,7 @@ init_copper_display
 
 
                          ; 20 x 40
+                         even
 scroll_tile_map
                         dc.b    $01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$01   ; 000
                         dc.b    $00,$00,$01,$01,$01,$00,$01,$01,$01,$00,$01,$01,$01,$00,$00,$00,$00,$00,$01,$00   ; 001
@@ -373,10 +378,8 @@ scroll_tile_map
                         dc.b    $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; xx
                         dc.b    $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; xx
                         dc.b    $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; xx
-
-
-
                         even
+
 tile_gfx
                         dcb.w   16,$5555
                         dcb.w   16,$ffff
@@ -389,7 +392,6 @@ debug_string  dc.b  "01234567",$0
 
 menu_font_gfx
           incdir  "gfx/"
-          include "typerfont.s"
 
 
 
@@ -413,7 +415,7 @@ kill_system
 .blit_wait     btst.b    #14-8,DMACONR(a6)        ; wait for any existing blit operation to finish
                bne.s     .blit_wait
 
-               move.w  #$7fff,DMACON(a6)
+               move.w    #$7fff,DMACON(a6)
 
 
           ; enter supervisor mode (trash/forget old stack ptr)

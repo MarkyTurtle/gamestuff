@@ -20,8 +20,8 @@
                rsreset
 INIT_TILEMAP_PTR    rs.l      1    ; address ptr to the tile-map
 INIT_TILEGFX_PTR    rs.l      1    ; address ptr to the tile-gfx
-INIT_TILEMAP_WIDTH  rs.w      0    ; tile-map width (number of tiles wide)
-INIT_TILEMAP_HEIGHT rs.w      0    ; tile_map height (number of tiles high)
+INIT_TILEMAP_WIDTH  rs.w      1    ; tile-map width (number of tiles wide)
+INIT_TILEMAP_HEIGHT rs.w      1    ; tile_map height (number of tiles high)
 
 scr2_init_struct
                     dc.l      0    ; INIT_TILEMAP_PTR 
@@ -55,11 +55,14 @@ scr2_view_struct
                     dc.w      0         ; SCR2_VIEW_y_VEL - view y velocity in pixels per update
 
                rsreset
-SCR2_BUFFER_PTR     rs.l      1         ; address ptr to the buffer display memory
-SCR2_BUFFER_X_PX    rs.w      1         ; buffer x soft scroll position in pixels
-SCR2_BUFFER_Y_PX    rs.w      1         ; buffer y soft scroll position in pixels
-SCR2_BUFFER_WIDTH   rs.w      1         ; pixel width of the scroll buffer
-SCR2_BUFFER_HEIGHT  rs.w      1         ; pixel height of the scroll buffer
+SCR2_BUFFER_PTR          rs.l      1         ; address ptr to the buffer display memory
+SCR2_BUFFER_X_PX         rs.w      1         ; buffer x soft scroll position in pixels
+SCR2_BUFFER_Y_PX         rs.w      1         ; buffer y soft scroll position in pixels
+SCR2_BUFFER_WIDTH_PX     rs.w      1         ; pixel width of the scroll buffer
+SCR2_BUFFER_HEIGHT_PX    rs.w      1         ; pixel height of the scroll buffer
+SCR2_BUFFER_WIDTH_BYTE   rs.w      1         ; width of buffer in bytes              // TODO: Calculate Value on Initialisation
+SCR2_BUFFER_WIDTH_TILES  rs.w      1         ; width of buffer in tiles              // TODO: Calculate Value on Scroller Initialisation
+
 
 scr2_buffer_struct
                     dc.l      buffer_bitplane     ; SCR2_BUFFER_PTR - address ptr to buffer memory
@@ -67,6 +70,8 @@ scr2_buffer_struct
                     dc.w      0                   ; SCR2_BUFFER_Y_PX - buffer y scroll position in pixels
                     dc.w      320                 ; SCR2_BUFFER_WIDTH in pixels
                     dc.w      288                 ; SCR2_BUFFER_HEIGHT in pixels
+                    dc.w      40                  ; SCR2_BUFFER_WIDTH_BYTE
+                    dc.w      20                  ; SCR2_BUFFER_WIDTH_TILES
 
                rsreset
 SCR2_TILEMAP_PTR     rs.l      1         ; tile-map address ptr
@@ -88,7 +93,7 @@ scr2_initialise
                lea       scr2_struct,a1
 
                ; init scroll structure values from init values
-               lea       SCR2_TILEMAP_STRUCT(a1),a2
+               move.l    SCR2_TILEMAP_STRUCT(a1),a2
                move.l    INIT_TILEMAP_PTR(a0),SCR2_TILEMAP_PTR(a2)
                move.l    INIT_TILEGFX_PTR(a0),SCR2_TILEGFX_PTR(a2)
                move.w    INIT_TILEMAP_WIDTH(a0),SCR2_TILEMAP_WIDTH(a2)
@@ -319,51 +324,51 @@ scr2_scroll_update
 px_to_tile_idx_\@
      tst.w     \1
      beq.s     .avoid_div_0
-     divs      #16,d1
+     divs      #16,\1
 .avoid_div_0
  
      endm
 
 
                     ; ---------------- blit buffer full of tile data to buffer --------------
-                    ; IN:
-                    ;   - a0.l = scroll data structure
+                    ; Initialise the display 'view' / 'buffer' with a screen of tile-map
+                    ; graphics.
+                    ; Uses values stored from the initialised 'scr_struct' to construct
+                    ; the display.
+                    ;
+                    ; IN: (No Parameters Required)
                     ;
 scr2_scr_blit_tile_buffer
                     lea       scr2_struct,a0
                     move.l    SCR2_VIEW_STRUCT(a0),a1
                     moveq     #0,d0
+                    moveq     #0,d1
                     moveq     #0,d2
                     moveq     #0,d3
                     moveq     #0,d4
 
                   ; calc tile-map Y co-oord (top line's left-most tile index)
 .calc_tilemap_x_idx
-                    moveq     #0,d0
                     move.w    SCR2_VIEW_X_PX(a1),d0
                     px_to_tile_idx d0
 
                   ; calc source tile Y co-oord (top line's top-most tile index)
 .calc_top_row_idx
-                    moveq     #0,d1
                     move.w    SCR2_VIEW_Y_PX(a1),d1 
                     px_to_tile_idx d1
 
 .get_row_count
                     move.l    SCR2_BUFFER_STRUCT(a0),a1
-                    move.w    SCR2_BUFFER_HEIGHT(a0),d4       ; display height in tiles
+                    move.w    SCR2_BUFFER_HEIGHT_PX(a1),d4 
                     px_to_tile_idx d4
                     subq    #1,d4
 .row_loop
                     jsr     scr2_scr_blit_tile_row
-                    add.w   #1,d1                           ; increment tile-map x index
-                    add.w   #1,d3                           ; increment buffer tile x index
+                    add.w   #1,d1                           ; increment tile-map y index
+                    add.w   #1,d3                           ; increment buffer tile y index
                     dbf     d4,.row_loop
 
                     rts
-
-
-
 
 
 
@@ -376,13 +381,15 @@ scr2_scr_blit_tile_buffer
                     ;   - a0.l = scroll data structure
                     ;
 scr2_scr_blit_tile_row   
-                    movem.l d0-d7/a0,-(sp) 
-                    move.w  #20-1,d7                    ; 20 tiles wide display
+                    movem.l   d0-d7/a0,-(sp) 
+                    move.l    SCR2_BUFFER_STRUCT(a0),a1
+                    move.w    SCR2_BUFFER_WIDTH_TILES(a1),d7          ; get number of tiles per row
+                    sub.w     #1,d7
 .tile_loop
-                    bsr     scr2_scr_blit_tile
-                    add.w   #1,d0                   ; increment x index
-                    add.w   #1,d2
-                    dbf     d7,.tile_loop
+                    bsr       scr2_scr_blit_tile
+                    add.w     #1,d0                      ; increment x index
+                    add.w     #1,d2
+                    dbf       d7,.tile_loop
 
                     movem.l (sp)+,d0-d7/a0
                     rts
@@ -414,7 +421,7 @@ scr2_scr_blit_tile
                   ; calc destination gfx ptr
                     move.l  SCR2_BUFFER_PTR(a3),a4               ; destination bitplane ptr
                     mulu    #16,d3                               ; get raster y from tile y (multiply by tile height)
-                    mulu    SCR2_BUFFER_WIDTH(a3),d3             ; get y byte offset into bitplane
+                    mulu    SCR2_BUFFER_WIDTH_BYTE(a3),d3        ; get y byte offset into bitplane
                     mulu    #2,d2                                ; get x word offset
                     add.w   d2,d3                                ; get x,y byte offset into bitplane
                     lea     (a4,d3.w),a4                         ; desination buffer ptr
